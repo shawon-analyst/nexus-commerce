@@ -185,14 +185,18 @@ export function AvatarUploader({
 
   return (
     <div className="flex flex-col items-center gap-4 text-center">
-      <div className="relative">
+      {/*
+       * The wrapper is given the avatar's exact 96px box. It used to size
+       * itself from its inline child, which made the badge drift and let
+       * rapid interaction reflow the card.
+       */}
+      <div className="relative h-24 w-24 shrink-0">
         <UserAvatar
           src={profile.avatar_url}
           name={profile.full_name}
           email={profile.email}
           className="h-24 w-24 text-2xl ring-2 ring-background"
           sizes="96px"
-          forceInitials={uploading}
         />
         <Button
           type="button"
@@ -201,7 +205,7 @@ export function AvatarUploader({
           aria-label="Change profile photo"
           disabled={busy}
           onClick={() => fileInputRef.current?.click()}
-          className="absolute -bottom-1 -right-1 h-9 w-9 rounded-full border shadow-md"
+          className="absolute -bottom-1 -right-1 h-9 w-9 rounded-full border shadow-md active:scale-100"
         >
           {uploading ? (
             <Loader2 className="h-4 w-4 animate-spin" />

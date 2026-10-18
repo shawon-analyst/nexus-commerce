@@ -235,7 +235,7 @@ export function SiteHeader({ categories }: { categories: Category[] }) {
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className="ml-1 rounded-full transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-95"
+                  className="ml-1 flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full ring-offset-background transition-shadow hover:ring-2 hover:ring-ring/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                   aria-label="Account menu"
                 >
                   <UserAvatar

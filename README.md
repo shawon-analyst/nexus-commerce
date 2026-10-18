@@ -312,6 +312,26 @@ without a `code`; they are passed back to `/login` as a short code and spelled
 out in plain English by `friendlyAuthError()`, instead of stranding the shopper
 on a blank page.
 
+It is also written for **in-app browsers** — Facebook, Facebook Lite, Messenger,
+Instagram — which are the least forgiving clients on the web. Before blaming
+anything it asks whether a session exists *now*, so a WebView that fires the
+callback twice (the second time with an already-spent code and no verifier)
+forwards the shopper instead of telling a successfully signed-in person that
+their browser blocked a cookie. Every response is `Cache-Control: no-store`, so a
+`code` cannot be replayed out of a back/forward cache, and a genuinely missing
+PKCE verifier has its own error code (`auth-code-verifier-missing`) that the
+sign-in screen explains with "reopen this in Chrome or Safari". The route is
+excluded from the session-refresh middleware (`middleware.ts`) so exactly one
+writer touches the auth cookies on that request.
+
+Social sign-in itself is deliberately a **full-page redirect, never a popup**:
+in-app browsers refuse `window.open` but follow a top-level navigation. Google
+requests `prompt=select_account` so the account chooser always appears instead of
+silently reusing the browser's existing session, and Facebook is asked only for
+`public_profile` — GoTrue prepends `email` itself, so requesting it too produced
+the duplicated scope set `email email public_profile`. Both are pinned by
+`scripts/qa/auth-probe.mjs`.
+
 Uploads go to the **public-read `avatars` bucket**, where the write policies
 confine every file to `avatars/<uid>/…` (`storage.foldername(name)[1] =
 auth.uid()`, 2 MB, image MIME types only). Replacing a picture deletes the
@@ -567,7 +587,8 @@ reach an order that belongs to an account (only the owner or an admin can).
 ├─ store/cart-store.ts              # Zustand + persist (skipHydration) + totals
 ├─ public/og-default.png            # 1200x630 default Open Graph card (committed)
 ├─ scripts/make-og-image.ps1        # re-renders it with GDI+ — no extra dependencies
-├─ scripts/qa/                      # rls-probe · seo-probe · email-probe · image-probe (+ README)
+├─ scripts/qa/                      # rls-probe · seo-probe · email-probe · image-probe
+│                                  # auth-probe (+ README)
 ├─ supabase/migrations/             # 0001_init · 0002_seed · 0003_promote_admin
 │                                  # 0004_fix_orders_profiles_fk · 0005_bkash_payments
 │                                  # 0006_profile_avatars · 0007_require_auth_for_checkout
@@ -666,15 +687,33 @@ reach an order that belongs to an account (only the owner or an admin can).
     `/`, `/products`, `/admin` and `/login`, in both themes. No `404 /favicon.ico`
     in the network panel.
 14. **Social login + avatar sync**
-    With the Google provider enabled, `/login` → *Continue with Google* → after the
-    redirect the header shows the Google picture and name, and `/account` displays
-    the same picture with the name pre-filled. Repeat with Facebook. Then upload a
-    custom picture on `/account` — the header updates immediately and the uploaded
-    file (not the Google one) is what the next visit shows.
+    With the Google provider enabled, `/login` → *Continue with Google* → the Google
+    **account chooser always appears** (the app sends `prompt=select_account`, so it
+    cannot silently reuse a session the browser already holds) → after the redirect
+    the header shows the Google picture and name, and `/account` displays the same
+    picture with the name pre-filled. Repeat with Facebook, including from the
+    **Facebook app or Facebook Lite** in-app browser. Then upload a custom picture
+    on `/account` — the header updates immediately and the uploaded file (not the
+    Google one) is what the next visit shows.
+
+    The profile picture is deliberately boring to click. Its box is a fixed 36px in
+    the header and 96px on `/account`, `flex-shrink: 0`, `overflow: hidden`, and the
+    initials badge is painted *underneath* the photo on every render — so a slow or
+    broken picture fades over a correct badge instead of flashing an empty circle,
+    and double-clicking, triple-clicking or dragging it moves nothing. The old
+    build scaled the header trigger (`hover:scale-105` / `active:scale-95`) and let
+    the account wrapper size itself from its inline child; both are gone.
 15. **Profile editing**
     `/account` → *Edit profile*: change the name, phone and delivery address, save,
     and confirm the values persist after a reload, show up in the personal-details
-    card, and pre-fill `/checkout`.
+    card, and pre-fill `/checkout`. Do it on a phone width too: the card must not
+    gain a horizontal scrollbar. An e-mail address is a single unbreakable ~300px
+    token, and the detail rows are flex children that are allowed to shrink, so
+    without a break opportunity the text spilled out of the card and gave the page
+    15px of sideways scroll on a 390px screen. The values now wrap
+    (`break-words`), the two page columns carry `min-w-0`, and a 320 / 360 / 390 /
+    414px sweep of `/`, `/products`, `/cart`, `/account`, `/orders` and `/checkout`
+    reports `scrollWidth === clientWidth` everywhere.
 16. **Checkout needs an account**
     Signed out, open `/checkout` → the *Sign in to check out* card (never the form),
     and the URL becomes `/login?redirectTo=%2Fcheckout`; the login page says *Sign in
@@ -889,6 +928,9 @@ pointing at `localhost:3000`.
 | Avatar upload fails / “new row violates row-level security policy” | Run `0006_profile_avatars.sql` — it creates the public `avatars` bucket with owner-only write policies. Uploads must land in `avatars/<your-user-id>/…`. |
 | The header shows initials even though the shopper signed in with Google | The trigger ran before `0006` was applied. Run `0006_profile_avatars.sql`: it backfills `avatar_url` from `auth.users` for every profile that has none. |
 | *Continue with Google/Facebook* returns to `/login?error=…` | The provider is not enabled (or the redirect URI is missing). Configure it in Supabase → **Authentication → Providers**, and add `https://<ref>.supabase.co/auth/v1/callback` to the provider's allowed redirect list. |
+| *Continue with Google* signs in silently, skipping the account chooser | That was the default: Google reuses whatever session the browser holds. The app now sends `prompt=select_account`; if it is ignored, the deployed build predates the fix — redeploy. `node scripts/qa/auth-probe.mjs` proves the parameter reaches `accounts.google.com`. |
+| Signed in inside Facebook / Messenger / Instagram but *still* signed out afterwards, or *"This browser dropped the part of the sign-in…"* | In-app browsers commonly refuse the cookie that holds the PKCE code verifier, and often fire the callback twice. The callback is now replay-safe (`Cache-Control: no-store`, and a second hit with an already-spent code forwards the session instead of failing) and `/auth/callback` is excluded from the session-refresh middleware so only one writer touches the auth cookies. The remaining case is a genuinely blocked cookie — the message says so and asks the shopper to reopen in Chrome or Safari via the ⋯ menu. |
+| Facebook login fails with *Invalid Scopes* | The app previously asked for `email,public_profile`, which GoTrue turned into the duplicated set `email email public_profile`. It now requests only `public_profile`, which GoTrue completes to `email public_profile`. |
 | The password-reset e-mail never arrives | It is sent by **Supabase Auth**, not the Resend order mail — check spam, then the SMTP/sender under Supabase → **Authentication → Emails**. An address with no account gets no mail on purpose, and the screen stays deliberately vague either way. |
 | The reset link reports expired, or `/reset-password` shows the dead-link screen | Recovery links are single-use and last an hour. Also allow-list the site: Supabase → **Authentication → URL Configuration** must include both the **Site URL** and `…/auth/callback`, otherwise the callback cannot mint the recovery session. |
 | Choosing a new password fails with *Auth session missing* | `/reset-password` was opened directly instead of through the e-mailed link. Send the shopper to `/forgot-password` for a fresh one — the page says this itself. |
@@ -976,8 +1018,8 @@ the money, the escaping and the route's guards.
 | Item | Why it is not done yet |
 | --- | --- |
 | **Upgrading Next.js** | `npm audit` flags the pinned `next@14.2.35` with two *critical* advisories plus a dozen others — notably an unauthenticated RCE in the Image Optimization API when AVIF files are used, and one that requires a **Windows**-hosted server (moot on Vercel, live on a Windows VM). The closed image allow-list above removes the practical vector, but the real fix is the upgrade. It is a **major** version jump (React 19, async `cookies()`/`params` in every route), so it deserves its own change with the whole QA suite re-run — not a hardening pass. |
-| Supabase **Redirect URLs** allow-list | The code builds every auth callback from `NEXT_PUBLIC_SITE_URL` (`lib/auth-url.ts`) and the live project already has Google, Facebook and email all enabled — a real hand-off to `accounts.google.com` was confirmed. What is left is a dashboard setting with no API surface here: **Authentication → URL Configuration** must list `https://nexus-commerce-shawon.vercel.app/auth/callback` (and the `?redirectTo=/**` variant) under *Redirect URLs*, with the same origin as *Site URL*. Until then Supabase falls back to *Site URL* and the OAuth / reset links land in the wrong place. |
-| Google / Facebook social sign-in | Both providers are switched on in Supabase → **Authentication → Providers** and the buttons match the contract. Facebook still needs its own Client ID/Secret if it was never filled in; Google is live. |
+| Supabase **Redirect URLs** allow-list | The code builds every auth callback from `NEXT_PUBLIC_SITE_URL` (`lib/auth-url.ts`) and the live project already has Google, Facebook and email all enabled — a real hand-off to `accounts.google.com` was confirmed. What is left is a dashboard setting with no API surface here: **Authentication → URL Configuration** must list `https://nexus-commerce-shawon.vercel.app/**` under *Redirect URLs*, with the same origin as *Site URL*. Until then Supabase falls back to *Site URL* and the OAuth / reset links land in the wrong place. |
+| Facebook Client ID/Secret | The provider is switched on in Supabase, but if the credentials were never filled in the flow stops at Facebook. Google is live and verified end-to-end. |
 | A real support address in the footer | `support@nexuscommerce.dev` is a placeholder — point it at a mailbox somebody actually reads. |
 | `Content-Security-Policy` | It needs the Supabase realtime origin, the image hosts and Next's inline runtime allow-listed. The headers already in `next.config.mjs` are the safe subset; a wrong CSP would break the shop rather than protect it. |
 | A printable / PDF invoice | The order card and the confirmation e-mail are the invoice — items, delivery, total — but there is no print stylesheet or PDF export. `lib/email/order-confirmation.ts` already renders the whole document as HTML, so a print route can reuse it. |

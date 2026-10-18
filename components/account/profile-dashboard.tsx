@@ -25,7 +25,7 @@ import { OrderStatusBadge } from '@/components/ui/status-badge';
 import { AvatarUploader } from '@/components/account/avatar-uploader';
 import { EditProfileDialog } from '@/components/account/edit-profile-dialog';
 import { useAuth } from '@/components/providers/auth-provider';
-import { formatCurrency, formatDate, toNumber } from '@/lib/utils';
+import { cn, formatCurrency, formatDate, toNumber } from '@/lib/utils';
 import type { OrderWithItems, Profile } from '@/lib/types';
 
 function StatTile({
@@ -76,7 +76,19 @@ function DetailRow({
       </span>
       <div className="min-w-0 flex-1">
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-        <p className={filled ? 'text-sm font-medium' : 'text-sm italic text-muted-foreground'}>
+        {/*
+         * `break-words` is load-bearing, not cosmetic: an e-mail address such as
+         * `qa.avatar.1792296407@nexuscommerce.dev` is one unbreakable 300px token,
+         * and this row lives in a flex column that is allowed to shrink
+         * (`min-w-0 flex-1`). Without a break opportunity the text spilled out of
+         * the card and gave `/account` a horizontal scrollbar on a 390px phone.
+         */}
+        <p
+          className={cn(
+            'break-words',
+            filled ? 'text-sm font-medium' : 'text-sm italic text-muted-foreground',
+          )}
+        >
           {filled ? value : fallback}
         </p>
       </div>
@@ -153,7 +165,7 @@ export function ProfileDashboard({
         {/* -------------------------------------------------------------- *
          *  Identity + avatar                                              *
          * -------------------------------------------------------------- */}
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
@@ -194,7 +206,7 @@ export function ProfileDashboard({
         {/* -------------------------------------------------------------- *
          *  Personal details                                              *
          * -------------------------------------------------------------- */}
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           <Card>
             <CardHeader className="flex-row items-start justify-between gap-4 space-y-0">
               <div>
@@ -301,7 +313,7 @@ export function ProfileDashboard({
           <Card>
             <CardContent className="flex items-start gap-3 p-4">
               <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-              <p className="text-xs text-muted-foreground">
+              <p className="min-w-0 break-words text-xs text-muted-foreground">
                 Signed in as <span className="font-medium text-foreground">{displayName}</span>. Your
                 photo and details are stored on your own profile row and only ever written by you —
                 nobody else can change them.

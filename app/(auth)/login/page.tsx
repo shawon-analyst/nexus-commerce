@@ -13,6 +13,8 @@ export const metadata: Metadata = {
 function friendlyAuthError(error: string) {
   if (error === 'auth-callback-failed')
     return 'That sign-in link has expired or was already used. Please try again.';
+  if (error === 'auth-code-verifier-missing')
+    return 'This browser dropped the part of the sign-in that proves it was you — in-app browsers such as Facebook, Messenger or Instagram do this. Reopen the site in Chrome or Safari (or tap the ⋯ menu and choose “Open in browser”) and sign in again.';
   if (error === 'access_denied' || error === 'access_denied_denied')
     return 'You cancelled the sign-in, or the provider denied the request. Nothing was charged — try again whenever you are ready.';
   if (error === 'otp_expired')

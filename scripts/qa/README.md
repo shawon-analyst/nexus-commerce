@@ -16,6 +16,7 @@ attempt.
 | `seo-probe.mjs` | `og:*` / `twitter:*` share cards, canonical URLs, title template, `robots.txt`, `sitemap.xml`, `noindex` on private pages and the security headers | a server running on `:3100` |
 | `email-probe.mjs` | the order-confirmation template's numbers and escaping, and the notify route's auth guards | a server on `:3000` **plus** a throwaway preview route (see the file header) |
 | `image-probe.mjs` | allow-listed image hosts still optimise and an attacker-chosen host is refused — the boundary that keeps the `/_next/image` advisories off the table | a server (default `:3100`) + `.env.local` |
+| `auth-probe.mjs` | the OAuth parameters the app sends reach the provider intact (`prompt=select_account` for Google, a non-duplicated scope set for Facebook), and `/auth/callback` fails soft, is uncacheable and refuses open redirects | `.env.local`; the callback half additionally wants a server on `:3100` |
 
 ## RLS
 
@@ -60,6 +61,26 @@ node scripts/qa/image-probe.mjs        # or PROBE_BASE=… for a dev server
 Reads real image URLs out of the database, optimises them through
 `/_next/image`, and then asserts that three attacker-chosen hosts are refused —
 including the `images.unsplash.com.evil.example.com` suffix trick.
+
+## Social sign-in
+
+```bash
+node scripts/qa/auth-probe.mjs         # add PROBE_BASE=… to also test the callback
+```
+
+Two halves. The provider half calls `/auth/v1/authorize` with `redirect: 'manual'`
+and reads the `Location` header, so it sees exactly what GoTrue hands Google or
+Facebook without starting a flow — no account is created and no e-mail is sent.
+It pins the two parameters that are easy to get wrong: Google needs
+`prompt=select_account` or it silently reuses the browser's existing session, and
+Facebook must *not* be asked for `email` because GoTrue already prepends it (the
+old `'email,public_profile'` value went out as the duplicated
+`scope=email email public_profile`).
+
+The callback half needs a server. It checks that a spent code, a bare call and a
+provider denial all redirect to `/login` (or `/forgot-password` for recovery)
+rather than 500-ing, that the response is `no-store`, and that `redirectTo` /
+`next` pointing at another origin are ignored.
 
 ## Related, kept outside the repo
 

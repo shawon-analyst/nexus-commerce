@@ -79,7 +79,12 @@ export function SocialAuthButtons({
       const supabase = getSupabaseBrowserClient();
 
       /*
-       * `redirectTo` must be an absolute URL that Supabase has allow-listed
+       * `signInWithOAuth` navigates the whole tab — there is no popup. That is
+       * the only shape that survives an in-app browser: Facebook's WebView,
+       * Facebook Lite and Instagram all refuse `window.open`, but a top-level
+       * redirect they follow happily.
+       *
+       * `redirectTo` must be an absolute URL Supabase has allow-listed
        * (Authentication → URL Configuration → Redirect URLs) or it is ignored
        * and the shopper is dumped on the project's Site URL instead. The helper
        * resolves the canonical production origin, falling back to this tab's
@@ -89,8 +94,30 @@ export function SocialAuthButtons({
         provider,
         options: {
           redirectTo: authCallbackUrl(redirectTo),
-          // `email` is required for Facebook; Google's profile scopes are default.
-          scopes: provider === 'facebook' ? 'email,public_profile' : undefined,
+
+          /*
+           * Google only. Without an explicit `prompt`, Google silently reuses
+           * whichever account the browser already holds a session for, so
+           * "Continue with Google" looks like it did nothing — or signs in the
+           * wrong person on a shared machine. `select_account` forces the
+           * chooser every time. GoTrue forwards it verbatim: the
+           * accounts.google.com request carries `prompt=select_account`
+           * (asserted by scripts/qa/auth-probe.mjs).
+           */
+          queryParams: provider === 'google' ? { prompt: 'select_account' } : undefined,
+
+          /*
+           * Facebook only. GoTrue *prepends* its own default of `email` to
+           * whatever we request, so the previous value of
+           * `'email,public_profile'` went out as the duplicated permission set
+           * `scope=email email public_profile` — the kind of malformed scope
+           * string Facebook answers with "Invalid Scopes". Asking only for the
+           * scope we need on top of the default yields the clean pair
+           * `email public_profile`. GoTrue normalises the delimiter either way,
+           * so the fix is the redundant token, not the comma (asserted by
+           * scripts/qa/auth-probe.mjs).
+           */
+          scopes: provider === 'facebook' ? 'public_profile' : undefined,
         },
       });
 
