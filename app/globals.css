@@ -1,0 +1,200 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: 222 47% 11%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    --accent: 210 40% 96%;
+    --accent-foreground: 222 47% 11%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 40% 98%;
+
+    --success: 152 76% 36%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 32 95% 44%;
+    --warning-foreground: 0 0% 100%;
+
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 222 47% 11%;
+
+    --radius: 0.65rem;
+  }
+
+  .dark {
+    /* Deep slate/zinc canvas: dark enough to disappear, high enough contrast
+       that body copy stays crisp instead of muddy. */
+    --background: 224 47% 5%;
+    --foreground: 210 40% 98%;
+
+    --card: 223 40% 8%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 223 40% 8%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 210 40% 98%;
+    --primary-foreground: 224 47% 8%;
+
+    --secondary: 217 33% 15%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217 33% 14%;
+    --muted-foreground: 215 20% 68%;
+
+    --accent: 217 33% 17%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 72% 56%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 152 62% 44%;
+    --success-foreground: 224 47% 6%;
+
+    --warning: 32 95% 54%;
+    --warning-foreground: 224 47% 6%;
+
+    --border: 215 28% 17%;
+    --input: 215 28% 20%;
+    --ring: 213 27% 72%;
+
+    /* native controls (scrollbars, date pickers, selects) follow the theme */
+    color-scheme: dark;
+  }
+
+  :root {
+    color-scheme: light;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: 'rlig' 1, 'calt' 1;
+  }
+
+  ::selection {
+    @apply bg-primary/15;
+  }
+}
+
+@layer utilities {
+  .container-tight {
+    @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Product-image container. In dark mode a faint diagonal sheen lifts the
+     photograph off the deep canvas instead of letting it float in a black box. */
+  .media-frame {
+    @apply relative overflow-hidden bg-muted;
+  }
+  .dark .media-frame {
+    background-image: linear-gradient(
+      135deg,
+      hsl(0 0% 100% / 0.09) 0%,
+      hsl(0 0% 100% / 0.035) 45%,
+      hsl(0 0% 100% / 0.01) 100%
+    );
+  }
+
+  /* Soft halo behind headline type in dark mode. */
+  .dark .glow-text {
+    text-shadow: 0 0 26px hsl(0 0% 100% / 0.22);
+  }
+
+  /* ---------------------------------------------------------------- *
+   *  Announcement bar                                                *
+   *  Deliberately dark in *both* themes: a deep, slowly drifting     *
+   *  gradient with bright accents reads as a premium banner instead  *
+   *  of a second navigation row.                                     *
+   * ---------------------------------------------------------------- */
+  .announcement-surface {
+    background-image: linear-gradient(
+      100deg,
+      hsl(224 47% 8%) 0%,
+      hsl(226 58% 17%) 18%,
+      hsl(268 64% 27%) 44%,
+      hsl(199 72% 20%) 72%,
+      hsl(224 47% 8%) 100%
+    );
+    background-size: 220% 100%;
+    animation: aurora 16s ease-in-out infinite;
+  }
+
+  /* Light streak that keeps the eye moving even when the ticker pauses. */
+  .announcement-sheen {
+    background-image: linear-gradient(
+      90deg,
+      transparent 0%,
+      hsl(0 0% 100% / 0.16) 45%,
+      hsl(0 0% 100% / 0.32) 50%,
+      hsl(0 0% 100% / 0.16) 55%,
+      transparent 100%
+    );
+  }
+
+  /* Hairline of colour under the bar so it separates from the header. */
+  .announcement-edge {
+    background-image: linear-gradient(
+      90deg,
+      hsl(268 80% 62%) 0%,
+      hsl(199 90% 55%) 50%,
+      hsl(152 70% 50%) 100%
+    );
+  }
+}
+
+/* Anyone who asked the OS for less motion gets the message list, statically. */
+@media (prefers-reduced-motion: reduce) {
+  .announcement-surface {
+    animation: none;
+  }
+}
+
+/* nicer scrollbars inside admin tables */
+@layer base {
+  .thin-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .thin-scrollbar::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-border;
+  }
+  .thin-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
