@@ -332,6 +332,39 @@ silently reusing the browser's existing session, and Facebook is asked only for
 the duplicated scope set `email email public_profile`. Both are pinned by
 `scripts/qa/auth-probe.mjs`.
 
+`lib/auth-url.ts` is the single place that builds the return URL, and it leaves
+the query string off for the default landing: the value handed to Supabase is
+byte-identical to `https://<origin>/auth/callback`, so an exact-string entry in
+**Authentication → URL Configuration → Redirect URLs** — and in the provider's
+own allowed redirect URI list — is enough. Deeper targets such as `/checkout` or
+`/reset-password` still travel as `?redirectTo=…`, because the route has to know
+where to send the shopper; the route itself falls back to `/` when the parameter
+is absent, so both shapes land correctly.
+
+#### Legal pages
+
+`/privacy` and `/terms` are plain, server-rendered documents inside the shop
+route group, so they inherit the real header and footer. They exist because an
+OAuth provider — Meta in particular — will not approve an app without a publicly
+reachable privacy policy and a documented way for a user to delete their data:
+
+- **`/privacy`** covers what is collected, why, who it is shared with, retention,
+  security and the shopper's rights, and carries the deletion route at
+  `/privacy#data-deletion` — the anchor to put in Meta's *Data Deletion
+  Instructions URL* field. It is also linked prominently from the top of the page,
+  so a shopper does not have to hunt for it. Every section is a real anchor with
+  `scroll-mt-32`, so a deep link is not left hidden behind the sticky header.
+- **`/terms`** covers eligibility, accounts (including the rule that staff and
+  operator accounts cannot order), BDT pricing, cash-on-delivery and bKash
+  payment, the ৳60/৳120 delivery charges, cancellation and the 30-day returns
+  policy, plus the governing law.
+- Both are linked from the **footer of every public page** and from the consent
+  line on `/login` and `/register`, are listed in `/sitemap.xml`, and are
+  indexable (`index, follow`). `scripts/qa/seo-probe.mjs` fetches them with Meta's
+  own crawler user-agent and asserts reachability without an account, the
+  canonical URL, the share card, the breadcrumb graph and the `#data-deletion`
+  anchor.
+
 Uploads go to the **public-read `avatars` bucket**, where the write policies
 confine every file to `avatars/<uid>/…` (`storage.foldername(name)[1] =
 auth.uid()`, 2 MB, image MIME types only). Replacing a picture deletes the
@@ -529,6 +562,8 @@ reach an order that belongs to an account (only the owner or an admin can).
 │  │  ├─ orders/page.tsx            # my orders (live) / guest tracking
 │  │  ├─ orders/[id]/page.tsx       # order detail + timeline + cancel
 │  │  ├─ account/page.tsx           # profile dashboard: avatar upload + personal details
+│  │  ├─ privacy/page.tsx           # Privacy Policy (incl. the #data-deletion route)
+│  │  ├─ terms/page.tsx             # Terms of Service
 │  │  └─ not-found.tsx
 │  ├─ (auth)/
 │  │  ├─ layout.tsx                 # split-screen auth shell
@@ -548,7 +583,7 @@ reach an order that belongs to an account (only the owner or an admin can).
 │  ├─ api/orders/[id]/notify/route.ts  # best-effort order-confirmation e-mail (owner-only)
 │  ├─ auth/callback/route.ts        # OAuth / e-mail confirmation exchange (code → session)
 │  ├─ robots.ts                     # /robots.txt: blocks /admin + /api, points at the sitemap
-│  ├─ sitemap.ts                    # /sitemap.xml: home + catalogue + every active product
+│  ├─ sitemap.ts                    # /sitemap.xml: home + catalogue + products + the policy pages
 │  ├─ layout.tsx                    # root: fonts, theme provider, auth bootstrap, metadata
 │  ├─ icon.svg · icon.png · favicon.ico · apple-icon.png   # the shopping-bag mark
 │  ├─ providers.tsx                 # Theme + Auth + Cart hydration + Toaster
@@ -558,6 +593,7 @@ reach an order that belongs to an account (only the owner or an admin can).
 │  ├─ auth/                         # login-form, register-form, social-auth-buttons,
 │  │                                # forgot-password-form, reset-password-form
 │  ├─ seo/json-ld.tsx               # schema.org <script> emitter (escapes `<`)
+│  ├─ legal/legal-page.tsx          # shared shell + anchorable sections for the policy pages
 │  ├─ account/                      # profile-dashboard, avatar-uploader, edit-profile-dialog
 │  ├─ layout/                       # site-header, site-footer, announcement-bar,
 │  │                                # support-widgets (WhatsApp + Messenger), theme-toggle
@@ -583,6 +619,7 @@ reach an order that belongs to an account (only the owner or an admin can).
 │  ├─ seo.ts                        # canonical origin, share card, descriptions, NO_INDEX
 │  ├─ structured-data.ts            # schema.org builders: Organization, WebSite, Product, Breadcrumb
 │  ├─ auth-url.ts                   # the one allow-listed /auth/callback URL all auth flows use
+│  ├─ legal.ts                      # policy metadata: last-updated date, the #data-deletion anchor
 │  └─ email/{resend,order-confirmation}.ts  # fail-soft transport + invoice template
 ├─ store/cart-store.ts              # Zustand + persist (skipHydration) + totals
 ├─ public/og-default.png            # 1200x630 default Open Graph card (committed)
@@ -758,13 +795,25 @@ reach an order that belongs to an account (only the owner or an admin can).
 21. **Share previews, robots and the sitemap**
     `curl -s localhost:3000/robots.txt` blocks `/admin` and `/api/` and points at
     the sitemap. `curl -s localhost:3000/sitemap.xml` lists the home page,
-    `/products` and every active product — and nothing private. View the source of
+    `/products`, every active product and the two policy pages — and nothing
+    private. View the source of
     `/` and `/products/<id>`: both carry `og:image`, `og:url` and `twitter:card`,
     the product one pointing at the product photo. `/cart` carries
     `<meta name="robots" content="noindex, nofollow">`. Once
     `NEXT_PUBLIC_SITE_URL` is the real domain, paste a product link into WhatsApp:
     the card renders with the photo, the title and the description.
-22. **Order confirmation e-mail**
+22. **Privacy Policy and Terms of Service**
+    Open `/privacy` and `/terms` in a private window — no account, no redirect to
+    `/login`. Both are linked from the footer of every public page and from the
+    consent line on `/login` and `/register`. Jump to `/privacy#data-deletion`:
+    the "How to delete your data" heading lands clear of the sticky header, not
+    behind it. `node scripts/qa/seo-probe.mjs` fetches both with Meta's
+    `facebookexternalhit` crawler user-agent and asserts the 200, the `<h1>`, the
+    canonical URL, the share card, the breadcrumb graph and that anchor. For Meta
+    app review, the *Privacy Policy URL* is
+    `https://nexus-commerce-shawon.vercel.app/privacy` and the *Data Deletion
+    Instructions URL* is `https://nexus-commerce-shawon.vercel.app/privacy#data-deletion`.
+23. **Order confirmation e-mail**
     With `RESEND_API_KEY` and `ORDER_FROM_EMAIL` set, place a COD order: the
     confirmation screen appears immediately and the e-mail lands with the same
     *Items / Delivery / Total* breakdown as the order card, plus the tracking
@@ -888,14 +937,16 @@ production origin and add the auth callbacks to *Redirect URLs*:
 ```
 Site URL:  https://nexus-commerce-shawon.vercel.app
 Redirect URLs:
-           https://nexus-commerce-shawon.vercel.app/**
            https://nexus-commerce-shawon.vercel.app/auth/callback
+           https://nexus-commerce-shawon.vercel.app/**
            http://localhost:3000/**                    ← local development only
 ```
 
-The `/**` wildcard is required: the app appends `?redirectTo=/reset-password`
-(or `/`), and Supabase matches the whole URL, so the bare
-`…/auth/callback` entry alone is not enough.
+The bare `…/auth/callback` line is what an ordinary sign-in uses: `lib/auth-url.ts`
+only appends `?redirectTo=` for a deeper target, so the URL the app hands Supabase
+is byte-identical to that entry. Recovery (`/reset-password`) and the checkout
+redirect *do* carry the parameter, and Supabase matches the whole URL, so the
+`/**` wildcard is still needed for those.
 
 This is not optional. Supabase **silently ignores a `redirect_to` it does not
 recognise** and sends the browser to *Site URL* instead, which is exactly the
@@ -1018,7 +1069,8 @@ the money, the escaping and the route's guards.
 | Item | Why it is not done yet |
 | --- | --- |
 | **Upgrading Next.js** | `npm audit` flags the pinned `next@14.2.35` with two *critical* advisories plus a dozen others — notably an unauthenticated RCE in the Image Optimization API when AVIF files are used, and one that requires a **Windows**-hosted server (moot on Vercel, live on a Windows VM). The closed image allow-list above removes the practical vector, but the real fix is the upgrade. It is a **major** version jump (React 19, async `cookies()`/`params` in every route), so it deserves its own change with the whole QA suite re-run — not a hardening pass. |
-| Supabase **Redirect URLs** allow-list | The code builds every auth callback from `NEXT_PUBLIC_SITE_URL` (`lib/auth-url.ts`) and the live project already has Google, Facebook and email all enabled — a real hand-off to `accounts.google.com` was confirmed. What is left is a dashboard setting with no API surface here: **Authentication → URL Configuration** must list `https://nexus-commerce-shawon.vercel.app/**` under *Redirect URLs*, with the same origin as *Site URL*. Until then Supabase falls back to *Site URL* and the OAuth / reset links land in the wrong place. |
+| Supabase **Redirect URLs** allow-list | The code builds every auth callback from `NEXT_PUBLIC_SITE_URL` (`lib/auth-url.ts`) and the live project already has Google, Facebook and email all enabled — a real hand-off to `accounts.google.com` was confirmed. What is left is a dashboard setting with no API surface here: **Authentication → URL Configuration** must list `https://nexus-commerce-shawon.vercel.app/auth/callback` (and, for the deeper targets such as `/checkout` and `/reset-password`, the glob `https://nexus-commerce-shawon.vercel.app/**`) under *Redirect URLs*, with the same origin as *Site URL*. Until then Supabase falls back to *Site URL* and the OAuth / reset links land in the wrong place. |
+| Meta app settings (Privacy Policy / data deletion) | The pages now exist and pass review-shaped checks, but the fields themselves are in the Meta developer console. Under **App Settings → Basic** set *Privacy Policy URL* to `https://nexus-commerce-shawon.vercel.app/privacy`, *Terms of Service URL* to `…/terms`, and *User data deletion* to *Data Deletion Instructions URL* `https://nexus-commerce-shawon.vercel.app/privacy#data-deletion`. Facebook Login → Settings must also list `https://rwxttlwnjgwkiavepmtu.supabase.co/auth/v1/callback` as a valid OAuth redirect URI. |
 | Facebook Client ID/Secret | The provider is switched on in Supabase, but if the credentials were never filled in the flow stops at Facebook. Google is live and verified end-to-end. |
 | A real support address in the footer | `support@nexuscommerce.dev` is a placeholder — point it at a mailbox somebody actually reads. |
 | `Content-Security-Policy` | It needs the Supabase realtime origin, the image hosts and Next's inline runtime allow-listed. The headers already in `next.config.mjs` are the safe subset; a wrong CSP would break the shop rather than protect it. |

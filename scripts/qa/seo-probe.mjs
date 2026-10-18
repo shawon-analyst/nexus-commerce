@@ -186,6 +186,52 @@ check('sitemap lists active products with absolute urls',
   `${locs.filter((u) => u.includes('/products/')).length} product urls`);
 check('sitemap excludes private pages', !locs.some((u) => /\/(cart|checkout|account|orders|login|register|admin)/.test(u)));
 
+// ------------------------------------------------------------------- legal ---
+/*
+ * Meta's reviewer opens the privacy policy with no account, using its own
+ * crawler user-agent (which `get()` already sends), and looks for a data
+ * deletion route. So these pages are asserted exactly the way that reviewer
+ * sees them: reached anonymously, indexable, canonical, deep-linkable, and
+ * linked from the storefront rather than only reachable by typing a URL.
+ */
+const LEGAL_PAGES = [
+  { path: '/privacy', heading: 'Privacy Policy', anchor: 'data-deletion' },
+  { path: '/terms', heading: 'Terms of Service', anchor: null },
+];
+
+check('sitemap lists /privacy', locs.includes(`${ORIGIN}/privacy`));
+check('sitemap lists /terms', locs.includes(`${ORIGIN}/terms`));
+
+for (const page of LEGAL_PAGES) {
+  const anon = await get(page.path, 'manual');
+  check(
+    `${page.path} is reachable without an account`,
+    anon.status === 200 && !(anon.headers.get('location') ?? '').includes('/login'),
+    `${anon.status}${anon.headers.get('location') ? ` → ${anon.headers.get('location')}` : ''}`,
+  );
+
+  const html = await (await get(page.path)).text();
+  const nodes = jsonLd(html);
+  check(`${page.path} h1 reads "${page.heading}"`, new RegExp(`<h1[^>]*>${page.heading}</h1>`, 'i').test(html));
+  check(`${page.path} is indexable`, !(meta(html, 'robots') ?? '').includes('noindex'), meta(html, 'robots') ?? '(none)');
+  check(`${page.path} has a canonical url`, link(html, 'canonical') === `${ORIGIN}${page.path}`, link(html, 'canonical'));
+  check(`${page.path} has an og share card`, Boolean(meta(html, 'og:title')) && Boolean(meta(html, 'og:image')));
+  check(`${page.path} emits breadcrumb structured data`, nodes.some((n) => n['@type'] === 'BreadcrumbList'));
+  if (page.anchor) {
+    check(`${page.path}#${page.anchor} anchor target exists`, new RegExp(`id="${page.anchor}"`).test(html));
+  }
+}
+
+const footerHtml = await (await get('/')).text();
+check('the storefront footer links the privacy policy', /href="\/privacy"/.test(footerHtml));
+check('the storefront footer links the terms', /href="\/terms"/.test(footerHtml));
+
+const loginHtml = await (await get('/login')).text();
+check(
+  'the sign-in screen links both policies',
+  /href="\/privacy"/.test(loginHtml) && /href="\/terms"/.test(loginHtml),
+);
+
 // ----------------------------------------------------------------- og image ---
 const ogRes = await get('/og-default.png');
 const ogBytes = Buffer.from(await ogRes.arrayBuffer());

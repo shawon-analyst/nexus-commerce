@@ -54,7 +54,14 @@ async function authorize(params) {
   return location ? new URL(location) : null;
 }
 
-const callbackUrl = `${ORIGIN}/auth/callback?redirectTo=%2F`;
+/*
+ * The exact value `authCallbackUrl('/')` produces — no query string — which is
+ * what the Google/Facebook button sends when the shopper is heading for the
+ * storefront. `lib/auth-url.ts` only appends `?redirectTo=` for deeper targets.
+ * The real assertion on that shape lives in the browser probe, which reads the
+ * outbound request; here the value only needs to be faithful.
+ */
+const callbackUrl = `${ORIGIN}/auth/callback`;
 
 console.log(`\n=== provider parameters (${new URL(SUPABASE_URL).host}) ===`);
 

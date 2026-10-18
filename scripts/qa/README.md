@@ -13,7 +13,7 @@ attempt.
 | Harness | What it proves | Needs |
 | --- | --- | --- |
 | `rls-probe.mjs` | a signed-in **customer** cannot read another user's orders, order items or profile through the REST API, anonymous requests return nothing, and self-promotion to `admin` is refused | `.env.local` (anon + service-role keys) |
-| `seo-probe.mjs` | `og:*` / `twitter:*` share cards, canonical URLs, title template, `robots.txt`, `sitemap.xml`, `noindex` on private pages and the security headers | a server running on `:3100` |
+| `seo-probe.mjs` | `og:*` / `twitter:*` share cards, canonical URLs, title template, `robots.txt`, `sitemap.xml`, `noindex` on private pages, the two policy pages (fetched with Meta's own crawler user-agent) and the security headers | a server running on `:3100` |
 | `email-probe.mjs` | the order-confirmation template's numbers and escaping, and the notify route's auth guards | a server on `:3000` **plus** a throwaway preview route (see the file header) |
 | `image-probe.mjs` | allow-listed image hosts still optimise and an attacker-chosen host is refused — the boundary that keeps the `/_next/image` advisories off the table | a server (default `:3100`) + `.env.local` |
 | `auth-probe.mjs` | the OAuth parameters the app sends reach the provider intact (`prompt=select_account` for Google, a non-duplicated scope set for Facebook), and `/auth/callback` fails soft, is uncacheable and refuses open redirects | `.env.local`; the callback half additionally wants a server on `:3100` |
@@ -41,6 +41,15 @@ node scripts/qa/seo-probe.mjs        # PROBE_ORIGIN must match the build's NEXT_
 environment really drives the output, build once with
 `NEXT_PUBLIC_SITE_URL=https://example.com` and run with
 `PROBE_ORIGIN=https://example.com` — every URL in the assertions should follow.
+
+It also covers the two **legal pages**. They are fetched with Meta's own
+`facebookexternalhit` crawler user-agent, because that is the client a provider
+uses when it reviews an app: each must answer 200 without a session (never a
+redirect to `/login`), declare a canonical URL and a share card, emit breadcrumb
+structured data, and — for `/privacy` — contain the `data-deletion` anchor that
+Meta's *Data Deletion Instructions URL* field points at. Finally it asserts the
+policies really are linked from the storefront footer and the sign-in screen, so
+they cannot become orphaned pages that only resolve when typed by hand.
 
 ## Order e-mail
 

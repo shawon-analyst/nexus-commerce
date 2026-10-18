@@ -163,6 +163,23 @@ export function RegisterForm({ redirectTo = '/' }: { redirectTo?: string }) {
         <UserPlus className="h-4 w-4" /> Create account
       </Button>
 
+      {/*
+       * Meta's reviewer looks for exactly this: a consent line that links to
+       * both policies, on the screen where the account is created and on the
+       * screen where a social sign-in is offered.
+       */}
+      <p className="text-center text-xs leading-relaxed text-muted-foreground">
+        By creating an account you agree to our{' '}
+        <Link href="/terms" prefetch className="underline underline-offset-2 hover:text-foreground">
+          Terms of Service
+        </Link>{' '}
+        and{' '}
+        <Link href="/privacy" prefetch className="underline underline-offset-2 hover:text-foreground">
+          Privacy Policy
+        </Link>
+        .
+      </p>
+
       <p className="text-center text-sm text-muted-foreground">
         Already registered?{' '}
         <Link

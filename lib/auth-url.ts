@@ -30,6 +30,19 @@ export function authCallbackUrl(redirectTo = '/'): string {
       : SITE_URL;
 
   const url = new URL('/auth/callback', origin);
-  url.searchParams.set('redirectTo', redirectTo);
+
+  /*
+   * The default landing (`/`) leaves the query string off entirely, so the value
+   * handed to Supabase is byte-identical to the literal
+   * `https://<origin>/auth/callback`. That matters twice over: Supabase's
+   * **Redirect URLs** list, and the OAuth provider's own allowed redirect URI,
+   * can then be satisfied by an exact-string entry instead of requiring everyone
+   * to remember the `/**` glob. `?redirectTo=%2F` is equivalent at runtime —
+   * the callback route already falls back to `/` when the parameter is absent.
+   *
+   * Anything deeper (`/checkout`, `/reset-password`, …) still travels as a
+   * normal query parameter, because the route has to know where to send them.
+   */
+  if (redirectTo && redirectTo !== '/') url.searchParams.set('redirectTo', redirectTo);
   return url.toString();
 }

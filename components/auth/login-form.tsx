@@ -125,6 +125,18 @@ export function LoginForm({ redirectTo = '/' }: { redirectTo?: string }) {
           Create one
         </Link>
       </p>
+
+      <p className="text-center text-xs leading-relaxed text-muted-foreground">
+        By signing in you agree to our{' '}
+        <Link href="/terms" prefetch className="underline underline-offset-2 hover:text-foreground">
+          Terms of Service
+        </Link>{' '}
+        and{' '}
+        <Link href="/privacy" prefetch className="underline underline-offset-2 hover:text-foreground">
+          Privacy Policy
+        </Link>
+        .
+      </p>
     </form>
   );
 }

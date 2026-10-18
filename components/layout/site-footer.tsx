@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { Mail, MapPin, Phone, ShieldCheck, Truck, RefreshCw, ShoppingBag, Wallet } from 'lucide-react';
+import { LEGAL_LINKS } from '@/lib/legal';
 import type { Category } from '@/lib/types';
 import { SHOP_ADDRESS, SUPPORT_EMAIL, SUPPORT_PHONE } from '@/lib/utils';
 
@@ -92,8 +93,29 @@ export function SiteFooter({ categories }: { categories: Category[] }) {
       </div>
 
       <div className="border-t">
-        <div className="container-tight flex flex-col items-center justify-between gap-3 py-5 text-xs text-muted-foreground sm:flex-row">
-          <p>© {year} Nexus Commerce. All rights reserved.</p>
+        <div className="container-tight flex flex-col items-center justify-between gap-4 py-5 text-xs text-muted-foreground sm:flex-row">
+          <div className="flex flex-col items-center gap-2 sm:items-start">
+            <p>© {year} Nexus Commerce. All rights reserved.</p>
+            {/*
+             * The policy links live in the footer rather than behind a "legal"
+             * page so they are reachable from every public route, without an
+             * account — which is exactly what Meta (and the other OAuth
+             * providers) require of an app's privacy policy URL.
+             */}
+            <ul className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
+              {LEGAL_LINKS.map((link) => (
+                <li key={link.href}>
+                  <Link
+                    href={link.href}
+                    prefetch
+                    className="transition-colors hover:text-foreground"
+                  >
+                    {link.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
           <ul className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
             <li className="flex items-center gap-1.5">
               <Truck className="h-3.5 w-3.5" /> Fast delivery
