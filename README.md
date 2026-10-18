@@ -141,7 +141,7 @@ never staff. See *Roles and the user-management module* in §2.
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://rwxttlwnjgwkiavepmtu.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_BeVBSWnT14RKxkpjAdI2xQ_B8NszMl9
-NEXT_PUBLIC_SITE_URL=http://localhost:3000
+NEXT_PUBLIC_SITE_URL=https://nexus-commerce-shawon.vercel.app
 # bKash "Send Money" wallet shown at checkout (defaults to 01789138295)
 # NEXT_PUBLIC_BKASH_NUMBER=01789138295
 # SUPABASE_SERVICE_ROLE_KEY=   ← optional, server-side only
@@ -149,12 +149,19 @@ NEXT_PUBLIC_SITE_URL=http://localhost:3000
 # ORDER_FROM_EMAIL=orders@your-domain.com       ← optional: verified in Resend
 ```
 
+Local development keeps `NEXT_PUBLIC_SITE_URL=http://localhost:3000`; the
+deployed build points it at the production origin. The auth screens do not
+depend on it being right, though — `lib/auth-url.ts` prefers a real (non-localhost)
+`NEXT_PUBLIC_SITE_URL` and otherwise falls back to `window.location.origin`, so
+sign-in, sign-up and password reset work on a preview deployment too.
+
 `NEXT_PUBLIC_*` values are inlined into the bundle at **build** time. In
 production `NEXT_PUBLIC_SITE_URL` must be the real `https://` origin — the Open
-Graph share cards, the `<link rel="canonical">` tags and `sitemap.xml` are all
-built from it, so leaving it at `localhost` makes shared links advertise a dev
-machine. `SUPABASE_SERVICE_ROLE_KEY` is only needed for *Add user* and *Delete*
-on `/admin/users`; it must never be given a `NEXT_PUBLIC_` prefix.
+Graph share cards, the `<link rel="canonical">` tags, `sitemap.xml` **and** every
+Supabase auth callback URL are built from it, so leaving it at `localhost` makes
+shared links advertise a dev machine and points auth redirects at a host Supabase
+will refuse. `SUPABASE_SERVICE_ROLE_KEY` is only needed for *Add user* and
+*Delete* on `/admin/users`; it must never be given a `NEXT_PUBLIC_` prefix.
 
 ---
 
@@ -555,6 +562,7 @@ reach an order that belongs to an account (only the owner or an admin can).
 │  ├─ category-icons.ts             # slug/name → lucide icon for the category pills
 │  ├─ seo.ts                        # canonical origin, share card, descriptions, NO_INDEX
 │  ├─ structured-data.ts            # schema.org builders: Organization, WebSite, Product, Breadcrumb
+│  ├─ auth-url.ts                   # the one allow-listed /auth/callback URL all auth flows use
 │  └─ email/{resend,order-confirmation}.ts  # fail-soft transport + invoice template
 ├─ store/cart-store.ts              # Zustand + persist (skipHydration) + totals
 ├─ public/og-default.png            # 1200x630 default Open Graph card (committed)
@@ -809,9 +817,12 @@ what every `/_next/image` advisory needs in order to be remotely exploitable
 `images.formats` is pinned to `image/webp` so an AVIF source is never handed over
 either. Adding a fourth host is a one-line change — see §7.
 
-Two framework notes: `npm audit` reports advisories against the pinned
-**`next@14.2.35`**, including two critical ones, and the production image
-optimizer warns that `sharp` is not installed. Both are follow-ups in §8.
+One framework note: `npm audit` reports advisories against the pinned
+**`next@14.2.35`**, including two critical ones — a follow-up in §8. The
+production image optimizer's *"optional 'sharp' package is strongly
+recommended"* warning no longer appears: `sharp` is a regular dependency (see
+`npm i sharp`), so image optimisation runs on the native encoder rather than the
+slower WASM fallback — and avoids the WASM path the AVIF advisory concerns.
 
 Secrets: only `NEXT_PUBLIC_*` reaches the browser. `SUPABASE_SERVICE_ROLE_KEY` is
 read solely in `lib/supabase/server.ts` and the user-management route, and no
@@ -825,25 +836,45 @@ token is committed anywhere in `app/`, `lib/`, `components/` or `supabase/`.
 vercel                     # link the project
 vercel env add NEXT_PUBLIC_SUPABASE_URL
 vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY
-vercel env add NEXT_PUBLIC_SITE_URL      # https://your-domain.com
+vercel env add NEXT_PUBLIC_SITE_URL      # https://nexus-commerce-shawon.vercel.app
 vercel env add SUPABASE_SERVICE_ROLE_KEY # optional: "Add user" on /admin/users
 vercel env add RESEND_API_KEY            # optional: order confirmation e-mails
 vercel env add ORDER_FROM_EMAIL          # optional: verified sending address
 vercel --prod
 ```
 
-Then in Supabase → **Authentication → URL configuration**, add your production
-domain to *Site URL* and *Redirect URLs* (`https://your-domain.com/auth/callback`).
-The same URL must be accepted by each OAuth provider: in the Google Cloud console
-(or Meta *Facebook Login → Settings*) add
+Then in Supabase → **Authentication → URL configuration**, set *Site URL* to the
+production origin and add the auth callbacks to *Redirect URLs*:
+
+```
+Site URL:  https://nexus-commerce-shawon.vercel.app
+Redirect URLs:
+           https://nexus-commerce-shawon.vercel.app/**
+           https://nexus-commerce-shawon.vercel.app/auth/callback
+           http://localhost:3000/**                    ← local development only
+```
+
+The `/**` wildcard is required: the app appends `?redirectTo=/reset-password`
+(or `/`), and Supabase matches the whole URL, so the bare
+`…/auth/callback` entry alone is not enough.
+
+This is not optional. Supabase **silently ignores a `redirect_to` it does not
+recognise** and sends the browser to *Site URL* instead, which is exactly the
+"Continue with Google hangs on a blank page" symptom — and the same fallback
+breaks the password-reset link. The running app builds every one of those URLs
+from `NEXT_PUBLIC_SITE_URL` / `window.location.origin` in `lib/auth-url.ts`, so
+the value in Vercel and the value here have to agree.
+
+The same callback must be accepted by each OAuth provider: in the Google Cloud
+console (or Meta *Facebook Login → Settings*) add
 `https://<your-supabase-ref>.supabase.co/auth/v1/callback` as an authorised
 redirect URI, then switch the provider on in **Authentication → Providers**.
 
 `NEXT_PUBLIC_SITE_URL` is inlined at **build** time, so set it to the final domain
 *before* the first production build — or rerun `vercel --prod` after changing it.
-That one value is what the share cards, the canonical tags and `sitemap.xml`
-advertise, so a build made with the placeholder ships links pointing at
-`localhost:3000`.
+That one value is what the share cards, the canonical tags, `sitemap.xml` and the
+auth callbacks advertise, so a build made with the placeholder ships links
+pointing at `localhost:3000`.
 
 ---
 
@@ -945,8 +976,8 @@ the money, the escaping and the route's guards.
 | Item | Why it is not done yet |
 | --- | --- |
 | **Upgrading Next.js** | `npm audit` flags the pinned `next@14.2.35` with two *critical* advisories plus a dozen others — notably an unauthenticated RCE in the Image Optimization API when AVIF files are used, and one that requires a **Windows**-hosted server (moot on Vercel, live on a Windows VM). The closed image allow-list above removes the practical vector, but the real fix is the upgrade. It is a **major** version jump (React 19, async `cookies()`/`params` in every route), so it deserves its own change with the whole QA suite re-run — not a hardening pass. |
-| Installing `sharp` | Production logs *"the optional 'sharp' package is strongly recommended"*. Without it the built-in WASM encoder does the work: slower, and it is the path the AVIF advisory above concerns. One line, `npm i sharp`, and Next picks it up automatically. |
-| Google / Facebook social sign-in | The buttons and `/auth/callback` are built and match the provider contract, but each provider has to be switched on in Supabase → **Authentication → Providers** with the callback URI registered. |
+| Supabase **Redirect URLs** allow-list | The code builds every auth callback from `NEXT_PUBLIC_SITE_URL` (`lib/auth-url.ts`) and the live project already has Google, Facebook and email all enabled — a real hand-off to `accounts.google.com` was confirmed. What is left is a dashboard setting with no API surface here: **Authentication → URL Configuration** must list `https://nexus-commerce-shawon.vercel.app/auth/callback` (and the `?redirectTo=/**` variant) under *Redirect URLs*, with the same origin as *Site URL*. Until then Supabase falls back to *Site URL* and the OAuth / reset links land in the wrong place. |
+| Google / Facebook social sign-in | Both providers are switched on in Supabase → **Authentication → Providers** and the buttons match the contract. Facebook still needs its own Client ID/Secret if it was never filled in; Google is live. |
 | A real support address in the footer | `support@nexuscommerce.dev` is a placeholder — point it at a mailbox somebody actually reads. |
 | `Content-Security-Policy` | It needs the Supabase realtime origin, the image hosts and Next's inline runtime allow-listed. The headers already in `next.config.mjs` are the safe subset; a wrong CSP would break the shop rather than protect it. |
 | A printable / PDF invoice | The order card and the confirmation e-mail are the invoice — items, delivery, total — but there is no print stylesheet or PDF export. `lib/email/order-confirmation.ts` already renders the whole document as HTML, so a print route can reuse it. |

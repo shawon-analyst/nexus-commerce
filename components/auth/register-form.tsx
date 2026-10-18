@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { AuthDivider, SocialAuthButtons } from '@/components/auth/social-auth-buttons';
+import { authCallbackUrl } from '@/lib/auth-url';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { humanizeError } from '@/lib/utils';
 
@@ -38,7 +39,7 @@ export function RegisterForm({ redirectTo = '/' }: { redirectTo?: string }) {
           // `role` is intentionally NOT sent: roles can only be granted by an admin
           // from inside the database, which prevents privilege escalation.
           data: { full_name: fullName.trim(), phone: phone.trim() },
-          emailRedirectTo: `${window.location.origin}/auth/callback?redirectTo=${encodeURIComponent(redirectTo)}`,
+          emailRedirectTo: authCallbackUrl(redirectTo),
         },
       });
 

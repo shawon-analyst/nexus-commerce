@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { authCallbackUrl } from '@/lib/auth-url';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { humanizeError } from '@/lib/utils';
 
@@ -32,9 +33,8 @@ export function ForgotPasswordForm() {
     setLoading(true);
     try {
       const supabase = getSupabaseBrowserClient();
-      const redirectTo = `${window.location.origin}/auth/callback?redirectTo=${encodeURIComponent(
-        '/reset-password',
-      )}`;
+      // Absolute, allow-listed callback URL — see lib/auth-url.ts.
+      const redirectTo = authCallbackUrl('/reset-password');
 
       const { error } = await supabase.auth.resetPasswordForEmail(address, { redirectTo });
 

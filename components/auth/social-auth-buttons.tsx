@@ -4,6 +4,7 @@ import * as React from 'react';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { authCallbackUrl } from '@/lib/auth-url';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { humanizeError } from '@/lib/utils';
 
@@ -76,13 +77,18 @@ export function SocialAuthButtons({
     setPending(provider);
     try {
       const supabase = getSupabaseBrowserClient();
-      const callback = new URL('/auth/callback', window.location.origin);
-      callback.searchParams.set('redirectTo', redirectTo);
 
+      /*
+       * `redirectTo` must be an absolute URL that Supabase has allow-listed
+       * (Authentication → URL Configuration → Redirect URLs) or it is ignored
+       * and the shopper is dumped on the project's Site URL instead. The helper
+       * resolves the canonical production origin, falling back to this tab's
+       * origin in development.
+       */
       const { error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo: callback.toString(),
+          redirectTo: authCallbackUrl(redirectTo),
           // `email` is required for Facebook; Google's profile scopes are default.
           scopes: provider === 'facebook' ? 'email,public_profile' : undefined,
         },
