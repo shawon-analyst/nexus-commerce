@@ -93,11 +93,11 @@ export function CatalogFilters({
           )}
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between lg:w-auto">
+          <div className="flex w-full items-center gap-2 sm:w-auto">
+            <SlidersHorizontal className="h-4 w-4 shrink-0 text-muted-foreground" />
             <Select value={activeSort} onValueChange={(value) => push({ sort: value })}>
-              <SelectTrigger className="h-10 w-[190px]">
+              <SelectTrigger className="h-10 w-full sm:w-[190px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -139,7 +139,7 @@ export function CatalogFilters({
           />
         ))}
 
-        <div className="ml-auto flex items-center gap-3">
+        <div className="flex w-full items-center justify-end gap-3 sm:ml-auto sm:w-auto">
           {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
           <Badge variant="muted" className="font-normal">
             {resultCount} {resultCount === 1 ? 'result' : 'results'}

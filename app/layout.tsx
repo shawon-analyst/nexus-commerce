@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import { Providers } from '@/app/providers';
+import { JsonLd } from '@/components/seo/json-ld';
 import { getCurrentProfile } from '@/lib/queries';
+import { organizationSchema, websiteSchema } from '@/lib/structured-data';
 import {
   OG_IMAGE,
   OG_IMAGE_PATH,
@@ -79,6 +81,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} font-sans`}>
+        {/* Site-wide structured data: the Organization node and the WebSite node. */}
+        <JsonLd data={[organizationSchema(), websiteSchema()]} />
         <Providers
           initialUser={profile ? { id: profile.id, email: profile.email } : null}
           initialProfile={profile}

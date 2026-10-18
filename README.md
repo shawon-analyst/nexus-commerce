@@ -310,6 +310,24 @@ confine every file to `avatars/<uid>/…` (`storage.foldername(name)[1] =
 auth.uid()`, 2 MB, image MIME types only). Replacing a picture deletes the
 previous *uploaded* file — an external Google/Facebook URL is never deleted.
 
+#### Password recovery
+
+`/forgot-password` never builds a link by hand: it calls
+`supabase.auth.resetPasswordForEmail()` with `redirectTo` pointing at
+`/auth/callback?redirectTo=/reset-password`, so the **same** landing strip that
+handles OAuth also mints the recovery session. The callback additionally accepts
+the `token_hash` + `type=recovery` shape Supabase's default mail template sends
+(`verifyOtp`), and it knows a *recovery* failure belongs back on
+`/forgot-password` rather than `/login`.
+
+`/reset-password` reads the session server-side, so a used or expired link says
+so before any markup ships; the browser client re-checks on mount to also catch
+the implicit (`#access_token=…`) flow. The new password goes nowhere but
+`supabase.auth.updateUser()` — Supabase Auth hashes and stores it, and nothing is
+written to a log, a toast, or an analytics call. The confirmation screen is
+deliberately vague ("if that address has an account…") so it can never be used to
+probe which e-mails are registered.
+
 ### RPC endpoints
 
 | Function | Who can call it | Purpose |
@@ -487,8 +505,10 @@ reach an order that belongs to an account (only the owner or an admin can).
 │  │  └─ not-found.tsx
 │  ├─ (auth)/
 │  │  ├─ layout.tsx                 # split-screen auth shell
-│  │  ├─ login/page.tsx             # Google / Facebook + e-mail
-│  │  └─ register/page.tsx          # instant sign-in, no e-mail confirmation step
+│  │  ├─ login/page.tsx             # Google / Facebook + e-mail, plus the recovery link
+│  │  ├─ register/page.tsx          # instant sign-in, no e-mail confirmation step
+│  │  ├─ forgot-password/page.tsx    # request a single-use recovery e-mail
+│  │  └─ reset-password/page.tsx     # choose a new password (dead-link state included)
 │  ├─ admin/                        # gated staff panel (admin, or operator)
 │  │  ├─ layout.tsx                 # server-side staff guard + AdminShell
 │  │  ├─ page.tsx                   # dashboard: KPIs, revenue chart, low stock, live feed
@@ -508,7 +528,9 @@ reach an order that belongs to an account (only the owner or an admin can).
 │  ├─ error.tsx · not-found.tsx · globals.css
 ├─ components/
 │  ├─ ui/                           # shadcn-style primitives + UserAvatar + TrxIdChip + skeletons
-│  ├─ auth/                         # login-form, register-form, social-auth-buttons
+│  ├─ auth/                         # login-form, register-form, social-auth-buttons,
+│  │                                # forgot-password-form, reset-password-form
+│  ├─ seo/json-ld.tsx               # schema.org <script> emitter (escapes `<`)
 │  ├─ account/                      # profile-dashboard, avatar-uploader, edit-profile-dialog
 │  ├─ layout/                       # site-header, site-footer, announcement-bar,
 │  │                                # support-widgets (WhatsApp + Messenger), theme-toggle
@@ -532,6 +554,7 @@ reach an order that belongs to an account (only the owner or an admin can).
 │                                   # creatableRole, date/error helpers
 │  ├─ category-icons.ts             # slug/name → lucide icon for the category pills
 │  ├─ seo.ts                        # canonical origin, share card, descriptions, NO_INDEX
+│  ├─ structured-data.ts            # schema.org builders: Organization, WebSite, Product, Breadcrumb
 │  └─ email/{resend,order-confirmation}.ts  # fail-soft transport + invoice template
 ├─ store/cart-store.ts              # Zustand + persist (skipHydration) + totals
 ├─ public/og-default.png            # 1200x630 default Open Graph card (committed)
@@ -757,7 +780,8 @@ why the shared fields are spread from `lib/seo.ts` instead of repeated.
 | Per-product card | `app/(shop)/products/[id]/page.tsx` | product photo + `og:image:alt`, falling back to the default card |
 | `robots.txt` | `app/robots.ts` | blocks `/admin` and `/api/`, advertises the sitemap |
 | `sitemap.xml` | `app/sitemap.ts` | home + catalogue + every active product, rebuilt hourly |
-| `noindex` | cart, checkout, account, orders, login, register | private and per-visitor pages |
+| JSON-LD | `lib/structured-data.ts` → `components/seo/json-ld.tsx` | one `@graph` per page: `Organization` + `WebSite` (with a Google sitelinks search box) site-wide; `Product` + `BreadcrumbList` on a PDP. Prices are emitted as `BDT` with `InStock`/`OutOfStock` |
+| `noindex` | cart, checkout, account, orders, login, register, forgot/reset password | private and per-visitor pages |
 
 `alternates.canonical` is set **per page**, never in the root layout: a canonical
 there would be inherited by every child segment and point the whole site at `/`.
@@ -834,6 +858,9 @@ advertise, so a build made with the placeholder ships links pointing at
 | Avatar upload fails / “new row violates row-level security policy” | Run `0006_profile_avatars.sql` — it creates the public `avatars` bucket with owner-only write policies. Uploads must land in `avatars/<your-user-id>/…`. |
 | The header shows initials even though the shopper signed in with Google | The trigger ran before `0006` was applied. Run `0006_profile_avatars.sql`: it backfills `avatar_url` from `auth.users` for every profile that has none. |
 | *Continue with Google/Facebook* returns to `/login?error=…` | The provider is not enabled (or the redirect URI is missing). Configure it in Supabase → **Authentication → Providers**, and add `https://<ref>.supabase.co/auth/v1/callback` to the provider's allowed redirect list. |
+| The password-reset e-mail never arrives | It is sent by **Supabase Auth**, not the Resend order mail — check spam, then the SMTP/sender under Supabase → **Authentication → Emails**. An address with no account gets no mail on purpose, and the screen stays deliberately vague either way. |
+| The reset link reports expired, or `/reset-password` shows the dead-link screen | Recovery links are single-use and last an hour. Also allow-list the site: Supabase → **Authentication → URL Configuration** must include both the **Site URL** and `…/auth/callback`, otherwise the callback cannot mint the recovery session. |
+| Choosing a new password fails with *Auth session missing* | `/reset-password` was opened directly instead of through the e-mailed link. Send the shopper to `/forgot-password` for a fresh one — the page says this itself. |
 | “permission denied for table products” | You are not an admin: run `0003_promote_admin.sql` with your e-mail. |
 | Admin panel loads but lists **no orders** (`PGRST200: Could not find a relationship between 'orders' and 'profiles'`) | `orders.user_id` is not pointing at `public.profiles`. Run `0004_fix_orders_profiles_fk.sql`, then reload. |
 | New sign-ups are asked to confirm their e-mail / cannot sign in | Run `0005_bkash_payments.sql` (adds `on_auth_user_auto_confirm`). For accounts created earlier: `update auth.users set email_confirmed_at = now() where email_confirmed_at is null;` |

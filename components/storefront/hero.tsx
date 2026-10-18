@@ -140,7 +140,7 @@ export function FeaturedRail({ products }: { products: ProductWithCategory[] }) 
         </Button>
       </div>
 
-      <div className="mt-7 grid grid-cols-2 gap-4 sm:gap-5 lg:grid-cols-4">
+      <div className="mt-7 grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-4">
         {products.slice(0, 8).map((product, index) => (
           <ProductCard key={product.id} product={product} priority={index < 4} />
         ))}

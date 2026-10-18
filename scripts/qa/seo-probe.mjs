@@ -43,6 +43,17 @@ const title = (html) => decode(html.match(/<title>([^<]*)<\/title>/i)?.[1] ?? nu
 const link = (html, rel) =>
   decode(html.match(new RegExp(`<link[^>]*rel="${rel}"[^>]*>`, 'i'))?.[0]?.match(/href="([^"]*)"/i)?.[1] ?? null);
 
+/** Every JSON-LD node a page emits, flattened out of its `@graph`. */
+const jsonLd = (html) =>
+  [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/gi)].flatMap((m) => {
+    try {
+      const parsed = JSON.parse(m[1]);
+      return parsed['@graph'] ?? [parsed];
+    } catch {
+      return [];
+    }
+  });
+
 const results = [];
 const check = (name, ok, detail = '') => {
   results.push({ ok });
@@ -98,6 +109,15 @@ check('home is indexable', (meta(home, 'robots') ?? '').includes('index'), meta(
 check('home googlebot max-image-preview:large', (meta(home, 'googlebot') ?? '').includes('max-image-preview:large'), meta(home, 'googlebot'));
 check('home has exactly one og:image', allMeta(home, 'og:image').length === 1, `${allMeta(home, 'og:image').length} tags`);
 
+const homeLd = jsonLd(home);
+check('home JSON-LD carries Organization + WebSite',
+  homeLd.some((n) => n['@type'] === 'Organization') && homeLd.some((n) => n['@type'] === 'WebSite'),
+  homeLd.map((n) => n['@type']).join(', ') || '(none)');
+check('WebSite JSON-LD exposes the sitelinks search box',
+  JSON.stringify(homeLd.find((n) => n['@type'] === 'WebSite') ?? {}).includes('products?q='));
+check('Organization JSON-LD carries a BD postal address',
+  (homeLd.find((n) => n['@type'] === 'Organization')?.address?.addressCountry ?? '') === 'BD');
+
 // ----------------------------------------------------------------- catalogue --
 const list = await (await get('/products')).text();
 check('products <title> uses template', title(list) === 'Shop all products · Nexus Commerce', title(list));
@@ -119,6 +139,15 @@ if (withImage) {
   check('product canonical', link(html, 'canonical') === `${ORIGIN}/products/${withImage.id}`, link(html, 'canonical'));
   check('product has exactly one og:image', allMeta(html, 'og:image').length === 1, `${allMeta(html, 'og:image').length} tags`);
   check('product meta description present', (meta(html, 'description') ?? '').length > 20);
+
+  const productLd = jsonLd(html);
+  const offer = productLd.find((n) => n['@type'] === 'Product')?.offers ?? {};
+  check('product JSON-LD offers the price in BDT with availability',
+    offer.priceCurrency === 'BDT' && /InStock|OutOfStock/.test(offer.availability ?? ''),
+    `${offer.priceCurrency} ${offer.price} · ${offer.availability}`);
+  check('product JSON-LD ships a BreadcrumbList',
+    productLd.some((n) => n['@type'] === 'BreadcrumbList' && (n.itemListElement ?? []).length >= 3),
+    productLd.map((n) => n['@type']).join(', '));
 
   const guess = await (await get('/products/11111111-2222-4333-8444-555555555555')).text();
   check('unknown product id → "Product not found", no crash',
@@ -167,7 +196,7 @@ check('og-default.png served as image/png', ogRes.status === 200 && (ogRes.heade
 check('og-default.png is a real 1200x630 PNG', isPng && w === 1200 && h === 630, `${w}x${h}, ${(ogBytes.length / 1024).toFixed(0)} KB`);
 
 // ------------------------------------------------------------------ noindex ---
-for (const path of ['/cart', '/login', '/register']) {
+for (const path of ['/cart', '/login', '/register', '/forgot-password', '/reset-password']) {
   const html = await (await get(path)).text();
   check(`${path} is noindex`, (meta(html, 'robots') ?? '').includes('noindex'), meta(html, 'robots'));
 }

@@ -69,17 +69,22 @@ export function ProductCard({
 
         <div className="absolute left-3 top-3 flex flex-col items-start gap-1.5">
           {product.featured && !soldOut && (
-            <Badge variant="default" className="shadow-sm">
+            <Badge variant="default" className="shadow-sm ring-1 ring-black/10">
               Featured
             </Badge>
           )}
           {soldOut && (
-            <Badge variant="destructive" className="shadow-sm">
+            <Badge variant="destructive" className="shadow-sm ring-1 ring-black/10">
               Sold out
             </Badge>
           )}
           {!soldOut && stock <= product.low_stock_threshold && (
-            <Badge variant="warning" className="shadow-sm">
+            /*
+             * Sits directly on the product photo. `backdrop-blur` plus the
+             * near-opaque tone from the Badge keeps "Only 2 left" legible over
+             * a white studio shot in dark mode.
+             */
+            <Badge variant="warning" className="shadow-sm ring-1 ring-black/10 backdrop-blur-sm">
               Only {stock} left
             </Badge>
           )}
@@ -92,7 +97,7 @@ export function ProductCard({
         )}
       </Link>
 
-      <div className="flex flex-1 flex-col p-4">
+      <div className="flex flex-1 flex-col p-3 sm:p-4">
         <Link href={`/products/${product.id}`} prefetch className="group/title">
           <h3 className="line-clamp-2 text-sm font-semibold leading-snug transition-colors group-hover/title:text-primary">
             {product.title}
@@ -103,15 +108,22 @@ export function ProductCard({
           {product.description}
         </p>
 
-        <div className="mt-3 flex items-end justify-between gap-2">
-          <div>
-            <p className="text-lg font-bold tabular-nums">{formatCurrency(price)}</p>
+        {/*
+         * `flex-wrap` is the anti-clipping guard: on a 2-up mobile grid a long
+         * price plus a wide "Sold out"/"Added" button would otherwise spill past
+         * the card's `overflow-hidden` edge and lose its label.
+         */}
+        <div className="mt-3 flex flex-wrap items-end justify-between gap-x-2 gap-y-2.5">
+          <div className="min-w-0">
+            <p className="text-base font-bold tabular-nums sm:text-lg">
+              {formatCurrency(price)}
+            </p>
             <p
               className={cn(
                 'text-[11px] font-medium',
                 stockInfo.tone === 'destructive' && 'text-destructive',
-                stockInfo.tone === 'warning' && 'text-amber-600',
-                stockInfo.tone === 'success' && 'text-emerald-600',
+                stockInfo.tone === 'warning' && 'text-amber-700 dark:text-amber-400',
+                stockInfo.tone === 'success' && 'text-emerald-700 dark:text-emerald-400',
               )}
             >
               {stockInfo.label}
@@ -124,7 +136,7 @@ export function ProductCard({
             disabled={soldOut}
             aria-label={soldOut ? `${product.title} is sold out` : `Add ${product.title} to cart`}
             className={cn(
-              'inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-all',
+              'inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-xs font-semibold transition-all',
               soldOut
                 ? 'cursor-not-allowed bg-muted text-muted-foreground'
                 : added

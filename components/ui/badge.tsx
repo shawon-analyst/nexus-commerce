@@ -11,11 +11,19 @@ const badgeVariants = cva(
         secondary: 'border-transparent bg-secondary text-secondary-foreground',
         destructive: 'border-transparent bg-destructive text-destructive-foreground',
         outline: 'border-border text-foreground',
+        /*
+         * The success / warning / info tones are used on top of photographs
+         * (product cards) as well as on flat cards. A translucent background is
+         * unreadable over a bright photo — the image shows through and the pale
+         * text disappears — so the dark theme uses a *near-opaque* tinted
+         * surface and a light foreground. Contrast is >= 6:1 in both themes on
+         * any backdrop.
+         */
         success:
-          'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300',
+          'border-emerald-600/40 bg-emerald-100 text-emerald-900 dark:border-emerald-400/40 dark:bg-emerald-950/90 dark:text-emerald-200',
         warning:
-          'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300',
-        info: 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/15 dark:text-blue-300',
+          'border-amber-600/40 bg-amber-100 text-amber-900 dark:border-amber-400/40 dark:bg-amber-950/90 dark:text-amber-200',
+        info: 'border-blue-600/40 bg-blue-100 text-blue-900 dark:border-blue-400/40 dark:bg-blue-950/90 dark:text-blue-200',
         muted: 'border-transparent bg-muted text-muted-foreground',
       },
     },

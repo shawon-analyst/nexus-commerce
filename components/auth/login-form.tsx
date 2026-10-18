@@ -81,7 +81,15 @@ export function LoginForm({ redirectTo = '/' }: { redirectTo?: string }) {
       </div>
 
       <div className="grid gap-1.5">
-        <Label htmlFor="password">Password</Label>
+        <div className="flex items-center justify-between">
+          <Label htmlFor="password">Password</Label>
+          <Link
+            href="/forgot-password"
+            className="text-xs font-medium text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
+          >
+            Forgot password?
+          </Link>
+        </div>
         <div className="relative">
           <Input
             id="password"

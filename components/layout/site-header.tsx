@@ -77,7 +77,7 @@ export function SiteHeader({ categories }: { categories: Category[] }) {
             <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
             <DialogPrimitive.Content
               aria-describedby={undefined}
-              className="fixed inset-y-0 left-0 z-50 flex h-full w-[85%] max-w-sm flex-col border-r bg-background p-5 shadow-xl duration-300 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left"
+              className="fixed inset-y-0 left-0 z-50 flex h-full w-[85%] max-w-sm flex-col overflow-y-auto overscroll-contain border-r bg-background p-5 shadow-xl duration-300 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left"
             >
               <div className="flex items-center justify-between">
                 <DialogPrimitive.Title className="text-lg font-bold">

@@ -3,10 +3,12 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { JsonLd } from '@/components/seo/json-ld';
 import { ProductCard } from '@/components/storefront/product-card';
 import { ProductDetail } from '@/components/storefront/product-detail';
 import { getProductById, getRelatedProducts } from '@/lib/queries';
 import { OG_IMAGE, SITE_NAME, absoluteUrl, openGraphDefaults } from '@/lib/seo';
+import { breadcrumbSchema, productSchema } from '@/lib/structured-data';
 import { truncate } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
@@ -61,8 +63,25 @@ export default async function ProductPage({ params }: { params: { id: string } }
 
   const related = await getRelatedProducts(product, 4);
 
+  const crumbs = [
+    { name: 'Home', path: '/' },
+    { name: 'Products', path: '/products' },
+    ...(product.categories
+      ? [
+          {
+            name: product.categories.name,
+            path: `/products?category=${product.categories.slug}`,
+          },
+        ]
+      : []),
+    { name: product.title, path: `/products/${product.id}` },
+  ];
+
   return (
     <>
+      {/* Product + breadcrumb graph: rich results for price, stock and category. */}
+      <JsonLd data={[productSchema(product), breadcrumbSchema(crumbs)]} />
+
       <ProductDetail product={product} />
 
       {related.length > 0 && (
@@ -84,7 +103,7 @@ export default async function ProductPage({ params }: { params: { id: string } }
               )}
             </div>
 
-            <div className="mt-7 grid grid-cols-2 gap-4 sm:gap-5 lg:grid-cols-4">
+            <div className="mt-7 grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-4">
               {related.map((item) => (
                 <ProductCard key={item.id} product={item} />
               ))}

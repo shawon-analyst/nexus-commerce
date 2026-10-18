@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import type { EmailOtpType } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 
 /**
@@ -8,6 +9,10 @@ import { createClient } from '@/lib/supabase/server';
  * exchange for a real session cookie before forwarding the shopper on. Provider
  * denials and expired codes arrive as `error` / `error_code` query params
  * instead, so those are surfaced on `/login` rather than swallowed.
+ *
+ * Password-recovery links also land here. Depending on the project's mail
+ * template they arrive either as a PKCE `code` (handled above) or as a
+ * `token_hash` + `type=recovery` pair, which is verified with `verifyOtp`.
  */
 
 /**
@@ -21,26 +26,48 @@ function safeNext(value: string | null): string {
   return value;
 }
 
+/** A failed recovery link is better retried from the request screen. */
+function errorScreen(next: string): string {
+  return next.startsWith('/reset-password') ? '/forgot-password' : '/login';
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get('code');
-  const next = safeNext(searchParams.get('redirectTo'));
+  const tokenHash = searchParams.get('token_hash');
+  const otpType = searchParams.get('type');
+  const next = safeNext(searchParams.get('redirectTo') ?? searchParams.get('next'));
   const error = searchParams.get('error');
   const errorCode = searchParams.get('error_code');
   const errorDescription = searchParams.get('error_description');
 
+  const supabase = createClient();
+
   if (error || errorCode || errorDescription) {
-    const code = errorCode ?? error ?? 'auth-callback-failed';
-    return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(code)}`);
+    const reason = errorCode ?? error ?? 'auth-callback-failed';
+    return NextResponse.redirect(
+      `${origin}${errorScreen(next)}?error=${encodeURIComponent(reason)}`,
+    );
   }
 
+  // PKCE flow: the provider (or GoTrue) handed us a one-time code.
   if (code) {
-    const supabase = createClient();
     const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
     if (!exchangeError) {
       return NextResponse.redirect(`${origin}${next}`);
     }
   }
 
-  return NextResponse.redirect(`${origin}/login?error=auth-callback-failed`);
+  // E-mail OTP flow: `token_hash` + `type` (recovery, invite, email_change…).
+  if (tokenHash && otpType) {
+    const { error: verifyError } = await supabase.auth.verifyOtp({
+      type: otpType as EmailOtpType,
+      token_hash: tokenHash,
+    });
+    if (!verifyError) {
+      return NextResponse.redirect(`${origin}${next}`);
+    }
+  }
+
+  return NextResponse.redirect(`${origin}${errorScreen(next)}?error=auth-callback-failed`);
 }

@@ -100,7 +100,7 @@ export default async function HomePage({
             }
           />
         ) : (
-          <div className="mt-7 grid grid-cols-2 gap-4 sm:gap-5 lg:grid-cols-4">
+          <div className="mt-7 grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-4">
             {showcase.map((product, index) => (
               <ProductCard key={product.id} product={product} priority={index < 4} />
             ))}
