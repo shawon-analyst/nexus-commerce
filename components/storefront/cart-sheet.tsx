@@ -8,11 +8,14 @@ import { Button } from '@/components/ui/button';
 import { SafeImage } from '@/components/ui/safe-image';
 import { Separator } from '@/components/ui/separator';
 import { useAuth } from '@/components/providers/auth-provider';
+import { useSiteSettings } from '@/components/providers/site-settings-provider';
+import { deliveryFeeFromSettings } from '@/lib/site-settings';
 import { cartItemsCount, cartTotals, deliveryAreaMeta, useCartStore } from '@/store/cart-store';
 import { cn, formatCurrency, signInHref, toNumber } from '@/lib/utils';
 
 export function CartSheet() {
   const user = useAuth().user;
+  const settings = useSiteSettings();
   const lines = useCartStore((s) => s.lines);
   const isOpen = useCartStore((s) => s.isOpen);
   const closeCart = useCartStore((s) => s.closeCart);
@@ -23,8 +26,8 @@ export function CartSheet() {
   const deliveryArea = useCartStore((s) => s.deliveryArea);
 
   const { subtotal, delivery, total } = React.useMemo(
-    () => cartTotals(lines, deliveryArea),
-    [lines, deliveryArea],
+    () => cartTotals(lines, deliveryArea, deliveryFeeFromSettings(deliveryArea, settings)),
+    [lines, deliveryArea, settings],
   );
   const count = cartItemsCount(lines);
 

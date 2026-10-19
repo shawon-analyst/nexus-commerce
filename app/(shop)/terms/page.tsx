@@ -1,8 +1,9 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { LegalList, LegalPage, LegalSection } from '@/components/legal/legal-page';
+import { getSiteSettings } from '@/lib/queries';
 import { OG_IMAGE, SITE_NAME, absoluteUrl, openGraphDefaults } from '@/lib/seo';
-import { BKASH_NUMBER, SHOP_ADDRESS, SUPPORT_EMAIL, SUPPORT_PHONE } from '@/lib/utils';
+import { SHOP_ADDRESS, SUPPORT_EMAIL, SUPPORT_PHONE, formatCurrency } from '@/lib/utils';
 
 const TITLE = 'Terms of Service';
 const DESCRIPTION = `The terms that apply when you buy from ${SITE_NAME}: accounts, prices in BDT, cash on delivery and bKash payment, delivery charges, cancellations, returns and refunds.`;
@@ -26,7 +27,11 @@ export const metadata: Metadata = {
   },
 };
 
-export default function TermsOfServicePage() {
+export default async function TermsOfServicePage() {
+  // The published wallet and the two charges are editable in /admin/settings, so
+  // this legal page must quote the live row rather than a compiled constant.
+  const settings = await getSiteSettings();
+
   return (
     <LegalPage
       title={TITLE}
@@ -143,10 +148,11 @@ export default function TermsOfServicePage() {
             when the parcel arrives. Please have the exact amount ready.
           </li>
           <li>
-            <strong className="text-foreground">bKash</strong> — send the total to {BKASH_NUMBER} and
-            paste the Transaction ID (TrxID) into the checkout form. Your order is marked{' '}
-            <em>awaiting verification</em> until we match the payment, and <em>paid</em> once we have.
-            An order with a missing or mismatched TrxID cannot be dispatched.
+            <strong className="text-foreground">bKash</strong> — send the total to{' '}
+            {settings.bkashNumber} and paste the Transaction ID (TrxID) into the checkout form. Your
+            order is marked <em>awaiting verification</em> until we match the payment, and{' '}
+            <em>paid</em> once we have. An order with a missing or mismatched TrxID cannot be
+            dispatched.
           </li>
         </LegalList>
         <p>
@@ -158,10 +164,12 @@ export default function TermsOfServicePage() {
       <LegalSection id="delivery" title="7. Delivery">
         <LegalList>
           <li>
-            <strong className="text-foreground">Inside Dhaka</strong> — ৳60.
+            <strong className="text-foreground">Inside Dhaka</strong> —{' '}
+            {formatCurrency(settings.insideDhakaCharge)}.
           </li>
           <li>
-            <strong className="text-foreground">Outside Dhaka</strong> — ৳120.
+            <strong className="text-foreground">Outside Dhaka</strong> —{' '}
+            {formatCurrency(settings.outsideDhakaCharge)}.
           </li>
           <li>
             The charge is added to every order, and is recalculated live in the order summary if you

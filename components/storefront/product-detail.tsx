@@ -22,13 +22,15 @@ import { Separator } from '@/components/ui/separator';
 import { SafeImage } from '@/components/ui/safe-image';
 import { useLiveProduct } from '@/hooks/use-realtime';
 import { useAuth } from '@/components/providers/auth-provider';
+import { useSiteSettings } from '@/components/providers/site-settings-provider';
 import { useCartStore } from '@/store/cart-store';
-import { cn, DELIVERY_AREA_META, formatCurrency, signInHref, stockLabel, toNumber } from '@/lib/utils';
+import { cn, formatCurrency, signInHref, stockLabel, toNumber } from '@/lib/utils';
 import type { ProductWithCategory } from '@/lib/types';
 
 export function ProductDetail({ product: initialProduct }: { product: ProductWithCategory }) {
   const router = useRouter();
   const user = useAuth().user;
+  const settings = useSiteSettings();
   const addLine = useCartStore((s) => s.addLine);
 
   // live stock counter: updates the moment another shopper checks out
@@ -305,7 +307,7 @@ export function ProductDetail({ product: initialProduct }: { product: ProductWit
             {[
               {
                 icon: Truck,
-                title: `Delivery from ${formatCurrency(DELIVERY_AREA_META.inside.fee)}`,
+                title: `Delivery from ${formatCurrency(settings.insideDhakaCharge)}`,
                 note: 'Inside Dhaka · dispatched within 24h',
               },
               { icon: RefreshCw, title: '30-day returns', note: 'Stock restored on cancel' },

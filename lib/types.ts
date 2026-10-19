@@ -145,6 +145,25 @@ export type AdminUserRow = Profile & {
   last_order_at: string | null;
 };
 
+/**
+ * The singleton row of `public.site_settings` (migration `0014`).
+ *
+ * Numeric columns arrive as strings over the wire, so read them through
+ * `toNumber()`. The app never touches this shape directly — `lib/queries.ts`
+ * maps it onto the client-safe `SiteSettings` in `lib/site-settings.ts`.
+ */
+export type SiteSettingsRow = {
+  id: string;
+  inside_dhaka_charge: number | string;
+  outside_dhaka_charge: number | string;
+  free_shipping_threshold: number | string | null;
+  bkash_number: string;
+  top_announcement_text: string;
+  top_announcement_enabled: boolean;
+  updated_at: string;
+  updated_by: string | null;
+};
+
 export type DashboardStats = {
   total_revenue: number;
   revenue_30d: number;
@@ -332,6 +351,39 @@ export type Database = {
             columns: ['product_id'];
             isOneToOne: false;
             referencedRelation: 'products';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      site_settings: {
+        Row: SiteSettingsRow;
+        Insert: {
+          id?: string;
+          inside_dhaka_charge?: number;
+          outside_dhaka_charge?: number;
+          free_shipping_threshold?: number | null;
+          bkash_number?: string;
+          top_announcement_text?: string;
+          top_announcement_enabled?: boolean;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Update: {
+          inside_dhaka_charge?: number;
+          outside_dhaka_charge?: number;
+          free_shipping_threshold?: number | null;
+          bkash_number?: string;
+          top_announcement_text?: string;
+          top_announcement_enabled?: boolean;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'site_settings_updated_by_fkey';
+            columns: ['updated_by'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
             referencedColumns: ['id'];
           },
         ];

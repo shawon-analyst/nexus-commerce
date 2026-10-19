@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import { Providers } from '@/app/providers';
 import { JsonLd } from '@/components/seo/json-ld';
-import { getCurrentProfile } from '@/lib/queries';
+import { getCurrentProfile, getSiteSettings } from '@/lib/queries';
 import { organizationSchema, websiteSchema } from '@/lib/structured-data';
 import {
   OG_IMAGE,
@@ -76,7 +76,10 @@ export const viewport: Viewport = {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   // Server-side bootstrap of the auth context: no loading flash, no extra round-trip.
-  const profile = await getCurrentProfile();
+  // The shop settings ride along in the same pass — the announcement bar, the
+  // cart and the checkout all read them from the provider, so a changed delivery
+  // fee can never be quoted one way in the cart and another at checkout.
+  const [profile, settings] = await Promise.all([getCurrentProfile(), getSiteSettings()]);
 
   return (
     <html lang="en" suppressHydrationWarning>
@@ -86,6 +89,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <Providers
           initialUser={profile ? { id: profile.id, email: profile.email } : null}
           initialProfile={profile}
+          settings={settings}
         >
           {children}
         </Providers>

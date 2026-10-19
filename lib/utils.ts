@@ -56,10 +56,11 @@ export function formatCurrency(value: unknown, options: { decimals?: boolean } =
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Delivery pricing — Inside Dhaka ৳ 60 · Outside Dhaka ৳ 120                 */
+/*  Delivery pricing — the defaults behind `site_settings`                    */
+/*  Inside Dhaka ৳ 60 · Outside Dhaka ৳ 120 (editable in /admin/settings).     */
 /*  The charge depends only on *where* the parcel goes, never on basket size.  */
-/*  Everything that quotes or records a fee reads from here, so the cart, the  */
-/*  order summary, the invoice and the database cannot disagree.               */
+/*  The live values come from the `site_settings` row; these are what the shop  */
+/*  falls back to when that row cannot be read.                               */
 /* -------------------------------------------------------------------------- */
 
 export const DELIVERY_AREA_META: Record<
@@ -97,14 +98,15 @@ export function deliveryAreaMeta(area: string | null | undefined) {
 }
 
 /**
- * The delivery charge for an area. An unknown value falls back to the
- * Inside-Dhaka fee rather than 0 — a bad value must never ship for free.
+ * The delivery charge for an area, from the compiled defaults.
  *
- * ⚠️ `place_order()` in SQL charges the same fees and writes the result into
- * `orders.shipping_fee` + `orders.delivery_area` (it cannot call this file).
- * Moving a number here means moving the matching `c_delivery_inside` /
- * `c_delivery_outside` constants in `place_order()` too — see
- * `0012_delivery_area.sql`.
+ * ⚠️ This is the **fallback**, not the live price. Since migration `0014` the
+ * shop's charges live in `public.site_settings` and are read through
+ * `deliveryFeeFromSettings()` in `lib/site-settings.ts`; `place_order()` reads the
+ * same row, so the database and the checkout agree by construction. This helper
+ * only answers for code that has no settings in hand (tests, a cold fallback when
+ * the settings row is unreachable) — and an unknown area still falls back to the
+ * Inside-Dhaka fee rather than 0, because a bad value must never ship for free.
  */
 export function deliveryFeeFor(area: string | null | undefined): number {
   return deliveryAreaMeta(area).fee;
@@ -336,9 +338,12 @@ export const SHOP_ADDRESS = 'Hemayetpur, Savar, Dhaka';
 /*  Payments (Cash on Delivery vs manual bKash transfer)                      */
 /* -------------------------------------------------------------------------- */
 
-/** The shop's bKash "Send Money" wallet. Override with NEXT_PUBLIC_BKASH_NUMBER. */
+/**
+ * The compiled fallback wallet, also read by `lib/site-settings.ts` when the
+ * settings row cannot be reached. The live number is `site_settings.bkash_number`
+ * (editable in `/admin/settings`).
+ */
 export const BKASH_NUMBER = process.env.NEXT_PUBLIC_BKASH_NUMBER ?? '01789138295';
-
 export const BKASH_INSTRUCTIONS =
   'Please Send Money to this bKash number, then paste your Transaction ID (TrxID) below to place your order.';
 
@@ -359,7 +364,9 @@ export const PAYMENT_METHOD_META: Record<
   online: {
     label: 'Pay online (card / wallet)',
     short: 'Online',
-    description: 'Stripe / Paystack placeholder — orders are queued as unpaid.',
+    // Historical orders only: the checkout disables the option and `place_order()`
+    // refuses new ones, so this copy is never a promise.
+    description: 'Card and wallet payments are coming soon — not available at checkout yet.',
   },
 };
 
@@ -409,6 +416,8 @@ export function humanizeError(error: unknown): string {
   if (/TRXID_REQUIRED/i.test(raw)) return 'Enter the bKash Transaction ID to continue.';
   if (/TRXID_INVALID/i.test(raw)) return 'That Transaction ID does not look valid.';
   if (/UNSUPPORTED_PAYMENT_METHOD/i.test(raw)) return 'Choose a supported payment method.';
+  if (/PAYMENT_METHOD_UNAVAILABLE/i.test(raw))
+    return 'Online card payments are not available yet — choose Cash on delivery or bKash.';
   if (/PHONE_REQUIRED/i.test(raw)) return 'A phone number is required for delivery.';
   if (/ADDRESS_REQUIRED/i.test(raw)) return 'A delivery address is required.';
   if (/INVALID_DELIVERY_AREA/i.test(raw)) return 'Choose a delivery area (Inside or Outside Dhaka).';

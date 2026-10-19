@@ -10,6 +10,8 @@ They read `.env.local` from the repository root. Nothing here touches data that
 belongs to a real shopper: `rls-probe.mjs` and `password-probe.mjs` each
 provision throwaway accounts to work with and delete them again, and the only
 other mutation is a deliberate, refused privilege-escalation attempt.
+`settings-probe.mjs` edits the shop-wide settings row, but only between its own
+`finally`-guaranteed read and restore — see *Store settings* below.
 
 | Harness | What it proves | Needs |
 | --- | --- | --- |
@@ -20,6 +22,7 @@ other mutation is a deliberate, refused privilege-escalation attempt.
 | `auth-probe.mjs` | the OAuth parameters the app sends reach the provider intact (`prompt=select_account` for Google), that Facebook is switched off in the project *and* can no longer reach facebook.com, and that `/auth/callback` fails soft, is uncacheable and refuses open redirects | `.env.local`; the callback half additionally wants a server on `:3100` |
 | `phone-probe.mjs` | the mobile-number rules behind sign-in: every spelling of one number collapses to one alias address, 013-019 are accepted and 012 is not, the reserved alias domain is refused on the email tab, the shared password policy, and that generated addresses never reach a screen | nothing (compiles `lib/phone.ts` + `lib/password.ts` + `lib/identity.ts` with the project's own `tsc`) |
 | `password-probe.mjs` | the password-management surface on a live server: malformed input, unknown numbers and unauthenticated calls are all refused without revealing whether an account exists, then a throwaway mobile account signs in, links a recovery address with its current password, and signs in again on the number once the alias is gone | `.env.local` (service-role key) + a server on `:3100` |
+| `settings-probe.mjs` | the live `site_settings` round trip: the row renders on the storefront and Terms, anonymous/customer saves are refused, an administrator saves ৳63/৳127 and the new fee + both ticker segments appear immediately, validation rejects a negative fee / bad wallet / non-boolean toggle, and the original row is restored afterwards | `.env.local` (service-role key) + a server on `:3100` with `0014` applied |
 
 ## RLS
 
@@ -125,6 +128,26 @@ the mobile number still signs in afterwards because the route resolves the
 replacement address server-side. One assertion asks `/api/auth/recover` to send,
 so a `429` answer is accepted; Supabase's shared sender is easily throttled, and
 neither the throttle nor a missing mailbox is this codebase's to fix.
+
+## Store settings
+
+```bash
+node scripts/qa/settings-probe.mjs     # PROBE_BASE=… for a port other than :3100
+```
+
+Needs `0014_site_settings.sql` applied. It first checks that the live row is what
+the storefront and `/terms` quote, then that an anonymous request and a customer
+session are both refused. The round-trip half provisions a **throwaway
+administrator**, saves ৳63 / ৳127 plus a two-segment announcement, and asserts
+that the API echoes the row, PostgREST holds it, the ticker shows both segments
+and Terms quotes the new fee — no redeploy. It also pins the validation (a
+negative fee, a bad wallet and a non-boolean toggle are each refused).
+
+Crucially, the probe **restores the original row** in a `finally` block and then
+drops the settings cache through `/api/revalidate`; without that second step the
+app would keep serving the probe's numbers from `unstable_cache` until the entry
+expired, and the next run would start on ৳63. The throwaway administrator is
+deleted last.
 
 ## Related, kept outside the repo
 

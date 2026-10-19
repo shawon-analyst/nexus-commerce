@@ -136,6 +136,9 @@ export const cartSubtotal = (lines: CartLine[]) =>
  * Delivery pricing lives in `lib/utils` next to the currency formatter, so the
  * cart, the order record and the checkout can never disagree. Re-exported here
  * because the cart UI has always imported them from the store.
+ *
+ * The *live* numbers now come from `site_settings` (see `lib/site-settings.ts`);
+ * these are the fallbacks for a database without migration 0014.
  */
 export {
   DEFAULT_DELIVERY_AREA,
@@ -145,12 +148,21 @@ export {
 };
 export type { DeliveryArea };
 
+/**
+ * Subtotal + delivery = total.
+ *
+ * `fee` is passed in rather than read from a module constant: the shop's
+ * delivery charges are editable in `/admin/settings`, so the cart must quote
+ * whatever the current settings row says. Callers that have no settings in hand
+ * (a unit test, a legacy call) fall back to the static `deliveryFeeFor()`.
+ */
 export function cartTotals(
   lines: CartLine[],
   area: string | null | undefined = DEFAULT_DELIVERY_AREA,
+  fee?: number,
 ) {
   const subtotal = cartSubtotal(lines);
-  const delivery = deliveryFeeFor(area);
+  const delivery = typeof fee === 'number' && Number.isFinite(fee) ? fee : deliveryFeeFor(area);
   return {
     subtotal,
     delivery,

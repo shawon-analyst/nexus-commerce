@@ -9,6 +9,8 @@ import { Separator } from '@/components/ui/separator';
 import { SafeImage } from '@/components/ui/safe-image';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useAuth } from '@/components/providers/auth-provider';
+import { useSiteSettings } from '@/components/providers/site-settings-provider';
+import { deliveryFeeFromSettings } from '@/lib/site-settings';
 import { StaffOrderNotice } from '@/components/storefront/staff-order-notice';
 import {
   cartItemsCount,
@@ -20,6 +22,7 @@ import { cn, formatCurrency, signInHref, signUpHref } from '@/lib/utils';
 
 export function CartView() {
   const { user, profile } = useAuth();
+  const settings = useSiteSettings();
   /*
    * An operator is running the shop, not shopping it. Read from the live profile
    * rather than anything cached at sign-in, so the moment an administrator sets
@@ -36,8 +39,8 @@ export function CartView() {
   const clearCart = useCartStore((s) => s.clear);
 
   const { subtotal, delivery, total } = React.useMemo(
-    () => cartTotals(lines, deliveryArea),
-    [lines, deliveryArea],
+    () => cartTotals(lines, deliveryArea, deliveryFeeFromSettings(deliveryArea, settings)),
+    [lines, deliveryArea, settings],
   );
   const count = cartItemsCount(lines);
 

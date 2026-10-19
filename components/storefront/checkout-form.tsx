@@ -26,12 +26,12 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { SafeImage } from '@/components/ui/safe-image';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
+import { useSiteSettings } from '@/components/providers/site-settings-provider';
+import { deliveryAreaMetaFromSettings } from '@/lib/site-settings';
 import { cartItemsCount, cartTotals, useCartStore } from '@/store/cart-store';
 import {
   BKASH_INSTRUCTIONS,
-  BKASH_NUMBER,
   DELIVERY_AREAS,
-  DELIVERY_AREA_META,
   PAYMENT_METHOD_META,
   cn,
   formatCurrency,
@@ -53,6 +53,7 @@ export function CheckoutForm({
   isAuthenticated?: boolean;
 }) {
   const router = useRouter();
+  const settings = useSiteSettings();
   const lines = useCartStore((s) => s.lines);
   const clearCart = useCartStore((s) => s.clear);
   const hydrated = useCartStore((s) => s.hydrated);
@@ -68,25 +69,31 @@ export function CheckoutForm({
   const [copied, setCopied] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
 
-  // Re-quoted on every delivery-area change: the summary is the live contract
-  // the order will be created with.
+  // Re-quoted on every delivery-area (or settings) change: the summary is the
+  // live contract the order will be created with.
   const { subtotal, delivery, total } = React.useMemo(
-    () => cartTotals(lines, deliveryArea),
-    [lines, deliveryArea],
+    () =>
+      cartTotals(
+        lines,
+        deliveryArea,
+        deliveryArea === 'outside' ? settings.outsideDhakaCharge : settings.insideDhakaCharge,
+      ),
+    [lines, deliveryArea, settings.insideDhakaCharge, settings.outsideDhakaCharge],
   );
   const count = cartItemsCount(lines);
   const isBkash = paymentMethod === 'bkash';
+  const bkashNumber = settings.bkashNumber;
 
   async function copyBkashNumber() {
     try {
-      await navigator.clipboard.writeText(BKASH_NUMBER);
+      await navigator.clipboard.writeText(bkashNumber);
     } catch {
       // Clipboard access can be blocked (insecure origin / denied permission).
-      window.prompt('Copy the bKash number below', BKASH_NUMBER);
+      window.prompt('Copy the bKash number below', bkashNumber);
       return;
     }
     setCopied(true);
-    toast.success('bKash number copied', { description: BKASH_NUMBER });
+    toast.success('bKash number copied', { description: bkashNumber });
     window.setTimeout(() => setCopied(false), 2000);
   }
 
@@ -134,6 +141,15 @@ export function CheckoutForm({
       toast.error('Your cart is empty');
       return;
     }
+    // `online` is shown as "Coming soon" and its radio is disabled. A stale tab
+    // (or a devtools tamper) could still put it in state, so refuse it here as
+    // well — and `place_order()` refuses it a third time in SQL.
+    if (paymentMethod === 'online') {
+      toast.error('Online payment is not available yet', {
+        description: 'Choose Cash on delivery or bKash to place this order.',
+      });
+      return;
+    }
     if (!customerName.trim()) return toast.error('Please enter your full name');
     if (phone.trim().replace(/\D/g, '').length < 7)
       return toast.error('Please enter a valid phone number');
@@ -174,8 +190,9 @@ export function CheckoutForm({
         // afterwards (which the tamper guard would reject anyway).
         p_transaction_id: isBkash ? transactionId.trim() : null,
         p_notes: notes.trim() || null,
-        // Drives the delivery charge the database writes (৳60 inside / ৳120
-        // outside). Validated in SQL, so a tampered value is refused there.
+        // Drives the delivery charge the database writes. Since migration 0014
+        // `place_order()` reads the fee from `site_settings`, i.e. the same row
+        // this summary quotes — validated in SQL, so a tampered value is refused.
         p_delivery_area: deliveryArea,
       });
 
@@ -294,7 +311,7 @@ export function CheckoutForm({
               </Label>
               <div className="grid gap-2 sm:grid-cols-2">
                 {DELIVERY_AREAS.map((area) => {
-                  const meta = DELIVERY_AREA_META[area];
+                  const meta = deliveryAreaMetaFromSettings(area, settings);
                   const active = deliveryArea === area;
                   return (
                     <label
@@ -415,7 +432,7 @@ export function CheckoutForm({
 
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <span className="font-mono text-xl font-bold tracking-wider text-rose-700 dark:text-rose-200">
-                    {BKASH_NUMBER}
+                    {bkashNumber}
                   </span>
                   <Button
                     type="button"
@@ -461,34 +478,41 @@ export function CheckoutForm({
               </div>
             )}
 
-            {/* ---- Online (provider placeholder) -------------------------- */}
+            {/* ---- Online (provider placeholder) — strictly disabled ------- */}
+            {/*
+              * Disabled three ways: the radio is `disabled`, the label carries
+              * `aria-disabled` and never calls `setPaymentMethod`, and
+              * `placeOrder()` refuses `online` before the RPC. The database
+              * refuses it a fourth time (`PAYMENT_METHOD_UNAVAILABLE`).
+              */}
             <label
-              className={cn(
-                'flex cursor-pointer items-start gap-3 rounded-lg border border-dashed p-4',
-                paymentMethod === 'online'
-                  ? 'border-primary bg-primary/5 opacity-100'
-                  : 'opacity-70 hover:bg-accent/50 hover:opacity-100',
-              )}
+              aria-disabled
+              className="flex cursor-not-allowed items-start gap-3 rounded-lg border border-dashed p-4 opacity-60"
             >
               <input
                 type="radio"
                 name="payment"
                 value="online"
-                checked={paymentMethod === 'online'}
-                onChange={() => setPaymentMethod('online')}
-                className="mt-1 h-4 w-4 accent-primary"
+                checked={false}
+                disabled
+                readOnly
+                aria-describedby="online-coming-soon"
+                className="mt-1 h-4 w-4 cursor-not-allowed accent-primary"
               />
               <CreditCard className="mt-0.5 h-5 w-5 text-muted-foreground" />
               <span>
-                <span className="flex items-center gap-2 text-sm font-semibold">
+                <span className="flex flex-wrap items-center gap-2 text-sm font-semibold">
                   {PAYMENT_METHOD_META.online.label}
                   <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                     Coming soon
                   </span>
                 </span>
-                <span className="mt-0.5 block text-xs text-muted-foreground">
-                  Stripe / Paystack placeholder — plug in your provider to enable. Orders placed
-                  with this option are queued as <em>unpaid</em> for manual settlement.
+                <span
+                  id="online-coming-soon"
+                  className="mt-0.5 block text-xs text-muted-foreground"
+                >
+                  Card and wallet payments are not available yet. Choose Cash on delivery or bKash
+                  to place your order today.
                 </span>
               </span>
             </label>
@@ -551,7 +575,7 @@ export function CheckoutForm({
                 <dt className="text-muted-foreground">
                   Delivery
                   <span className="ml-1 text-[11px] text-muted-foreground/70">
-                    ({DELIVERY_AREA_META[deliveryArea].short})
+                    ({deliveryAreaMetaFromSettings(deliveryArea, settings).short})
                   </span>
                 </dt>
                 <dd className="tabular-nums">{formatCurrency(delivery)}</dd>
@@ -568,7 +592,7 @@ export function CheckoutForm({
 
             {isBkash && (
               <p className="mt-4 rounded-md bg-rose-50 px-3 py-2 text-xs leading-relaxed text-rose-700 dark:bg-rose-500/10 dark:text-rose-200">
-                Send <strong>{formatCurrency(total)}</strong> to <strong>{BKASH_NUMBER}</strong> and
+                Send <strong>{formatCurrency(total)}</strong> to <strong>{bkashNumber}</strong> and
                 paste the TrxID above. The order stays{' '}
                 <strong>awaiting verification</strong> until an administrator confirms the transfer.
               </p>

@@ -9,6 +9,8 @@
 
 export const PRODUCTS_TAG = 'products';
 export const CATEGORIES_TAG = 'categories';
+/** Delivery fees, the bKash wallet and the announcement bar (migration 0014). */
+export const SETTINGS_TAG = 'site-settings';
 
 /** Every tag a client is allowed to ask the server to drop. */
-export const INVALIDATABLE_TAGS = [PRODUCTS_TAG, CATEGORIES_TAG] as const;
+export const INVALIDATABLE_TAGS = [PRODUCTS_TAG, CATEGORIES_TAG, SETTINGS_TAG] as const;

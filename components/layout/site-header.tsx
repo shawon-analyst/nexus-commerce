@@ -89,13 +89,13 @@ export function SiteHeader({ categories }: { categories: Category[] }) {
             <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
             <DialogPrimitive.Content
               aria-describedby={undefined}
-              className="fixed inset-y-0 left-0 z-50 flex h-full w-[85%] max-w-sm flex-col overflow-y-auto overscroll-contain border-r bg-background p-5 shadow-xl duration-300 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left"
+              className="fixed inset-y-0 left-0 z-50 flex h-full w-full max-w-[320px] flex-col overflow-y-auto overscroll-contain border-r bg-background px-4 py-5 shadow-xl duration-300 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left"
             >
-              <div className="flex items-center justify-between">
-                <DialogPrimitive.Title className="text-lg font-bold">
+              <div className="flex items-center justify-between gap-2">
+                <DialogPrimitive.Title className="truncate text-lg font-bold">
                   Nexus<span className="text-muted-foreground">Commerce</span>
                 </DialogPrimitive.Title>
-                <DialogPrimitive.Close className="rounded-md p-1.5 text-muted-foreground hover:bg-accent">
+                <DialogPrimitive.Close className="-mr-1 shrink-0 rounded-md p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
                   <X className="h-4 w-4" />
                   <span className="sr-only">Close</span>
                 </DialogPrimitive.Close>
@@ -103,14 +103,14 @@ export function SiteHeader({ categories }: { categories: Category[] }) {
 
               <SearchBar className="mt-5" />
 
-              <nav className="mt-6 flex flex-col gap-1">
+              <nav className="mt-6 flex flex-col gap-0.5">
                 {NAV_LINKS.map((link) => (
                   <Link
                     key={link.href}
                     href={link.href}
                     prefetch
                     className={cn(
-                      'rounded-md px-3 py-2.5 text-sm font-medium transition-colors hover:bg-accent',
+                      'flex min-h-11 items-center rounded-md px-3 text-sm font-medium transition-colors hover:bg-accent',
                       pathname === link.href && 'bg-accent',
                     )}
                   >
@@ -132,10 +132,10 @@ export function SiteHeader({ categories }: { categories: Category[] }) {
                           key={category.id}
                           href={`/products?category=${category.slug}`}
                           prefetch
-                          className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                          className="flex min-h-10 items-center gap-2 rounded-md px-3 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                         >
                           <Icon className="h-4 w-4 shrink-0" />
-                          {category.name}
+                          <span className="truncate">{category.name}</span>
                         </Link>
                       );
                     })}
@@ -148,13 +148,13 @@ export function SiteHeader({ categories }: { categories: Category[] }) {
                   <Link
                     href="/account"
                     prefetch
-                    className="mb-1 flex items-center gap-3 rounded-xl border bg-card/60 p-2.5 transition-colors hover:bg-accent"
+                    className="mb-1 flex min-w-0 items-center gap-3 overflow-hidden rounded-xl border bg-card/60 p-2.5 transition-colors hover:bg-accent"
                   >
                     <UserAvatar
                       src={profile?.avatar_url}
                       name={profile?.full_name}
                       email={displayEmail(profile?.email ?? user?.email) ?? profile?.phone}
-                      className="h-10 w-10 text-xs"
+                      className="h-10 w-10 shrink-0 text-xs"
                       sizes="40px"
                     />
                     <span className="min-w-0 flex-1">
@@ -165,43 +165,47 @@ export function SiteHeader({ categories }: { categories: Category[] }) {
                         {accountIdentity}
                       </span>
                     </span>
-                    <UserRound className="h-4 w-4 text-muted-foreground" />
+                    <UserRound className="h-4 w-4 shrink-0 text-muted-foreground" />
                   </Link>
                 )}
 
-                <div className="mb-1 flex items-center justify-between rounded-md border px-3 py-1.5">
+                <div className="mb-1 flex items-center justify-between gap-2 rounded-md border px-3 py-1.5">
                   <span className="text-sm font-medium">Appearance</span>
                   <ThemeToggle />
                 </div>
                 {user ? (
                   <>
-                    <Button asChild variant="outline">
+                    <Button asChild variant="outline" className="h-11 justify-start px-3">
                       <Link href="/account" prefetch>
                         <UserRound className="h-4 w-4" /> My profile
                       </Link>
                     </Button>
                     {isStaff && (
-                      <Button asChild variant="outline">
+                      <Button asChild variant="outline" className="h-11 justify-start px-3">
                         <Link href="/admin">
                           <LayoutDashboard className="h-4 w-4" /> Admin panel
                         </Link>
                       </Button>
                     )}
-                    <Button asChild>
+                    <Button asChild className="h-11 justify-start px-3">
                       <Link href="/orders">
                         <Package className="h-4 w-4" /> My orders
                       </Link>
                     </Button>
-                    <Button variant="ghost" onClick={() => void signOut()}>
+                    <Button
+                      variant="ghost"
+                      className="h-11 justify-start px-3 text-muted-foreground hover:text-destructive"
+                      onClick={() => void signOut()}
+                    >
                       <LogOut className="h-4 w-4" /> Sign out
                     </Button>
                   </>
                 ) : (
                   <>
-                    <Button asChild>
+                    <Button asChild className="h-11">
                       <Link href="/login">Sign in</Link>
                     </Button>
-                    <Button asChild variant="outline">
+                    <Button asChild variant="outline" className="h-11">
                       <Link href="/register">Create account</Link>
                     </Button>
                   </>

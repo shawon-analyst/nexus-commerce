@@ -100,9 +100,17 @@ admin dashboard if the schema is missing.
      *only* identity is Facebook, so it can never lock anybody out, and it is a
      no-op if you never offered Facebook login. A disabled provider cannot
      authenticate anything, so this is tidy-up rather than a fix.
+    - [`supabase/migrations/0014_site_settings.sql`](supabase/migrations/0014_site_settings.sql)
+      — moves the shop's numbers out of the code and into a singleton row.
+      `public.site_settings` holds the two delivery charges, the bKash wallet and
+      the announcement-bar copy, editable at **`/admin/settings`**. `place_order()`
+      now reads the fees from that row (falling back to ৳60/৳120 if it is missing),
+      so the database and the checkout cannot disagree, and it refuses the retired
+      `online` payment method with `PAYMENT_METHOD_UNAVAILABLE`. Public read,
+      administrator-only write; operators are bounced from the settings page.
 
    Every statement in these files is idempotent, so re-running them is harmless.
-   (`0007`–`0012` are already folded into `0001_init.sql`, so a fresh install needs
+   (`0007`–`0014` are already folded into `0001_init.sql`, so a fresh install needs
    none of them.)
 
    > **`0008` and `0009` must be run one at a time, in that order.** Postgres will
@@ -717,6 +725,35 @@ Browsing and `track_order()` stay open to guests, so an order placed before
 `0007` can still be found with its id + phone — but a phone number can no longer
 reach an order that belongs to an account (only the owner or an admin can).
 
+### Store settings (`site_settings`)
+
+The delivery charges, the bKash wallet and the announcement copy live in one
+singleton row instead of the bundle, editable at **`/admin/settings`**:
+
+| Column | Meaning |
+| --- | --- |
+| `inside_dhaka_charge` / `outside_dhaka_charge` | the two delivery fees (default ৳60 / ৳120) |
+| `bkash_number` | the wallet printed on the checkout and in the Terms |
+| `top_announcement_text` | ticker copy; split on `\|`, blank → the built-in messages |
+| `top_announcement_enabled` | hides the strip across the storefront when false |
+| `free_shipping_threshold` | **reserved** — stored but deliberately never applied |
+
+- **One source of truth.** `place_order()` reads the row inside the transaction
+  (`security definer`, so RLS cannot hide it) and charges *that* fee. The checkout
+  quotes the same numbers through `getSiteSettings()`, so the total on screen and
+  the total in the database cannot drift. If the row is missing, both fall back to
+  ৳60/৳120, which is also what keeps the shop working before `0014` is applied.
+- **Caching.** `getSiteSettings()` wraps the read in `unstable_cache` under
+  `SETTINGS_TAG`, and the root layout seeds a client `SiteSettingsProvider` — the
+  cart sheet, checkout, product page and ticker all read one value. Saving calls
+  `revalidateTag` + `revalidatePath('/', 'layout')`, so the next request sees the
+  new fee and no redeploy is needed.
+- **Who may change it.** The page, `POST /api/admin/settings` and the table's RLS
+  policy all require an **administrator**; middleware bounces an operator before
+  the console even streams. The write uses the caller's own session — the
+  service-role key is never involved — so a hand-rolled REST call hits the same
+  `is_admin()` barrier.
+
 ---
 
 ## 3 · File structure
@@ -750,8 +787,10 @@ reach an order that belongs to an account (only the owner or an admin can).
 │  │  ├─ orders/page.tsx            # order console: payment badges + TrxID + verify payment
 │  │  ├─ products/page.tsx          # inventory: inline stock +/-, uploads, CRUD
 │  │  ├─ categories/page.tsx        # category CRUD
+│  │  ├─ settings/page.tsx          # delivery fees, bKash wallet, announcement bar (admin only)
 │  │  └─ users/page.tsx             # user management: list + add (staff reads; admin writes)
 │  ├─ api/revalidate/route.ts       # staff cache-tag invalidation (admin or operator)
+│  ├─ api/admin/settings/route.ts   # save the site_settings row (admin only; revalidates the storefront)
 │  ├─ api/admin/users/route.ts      # create (Auth Admin API) / delete (RPC first) / PATCH sets a password (admin)
 │  ├─ api/account/recovery-email/route.ts  # link a recovery address — password-gated, Admin API
 │  ├─ api/auth/phone-signin/route.ts # mobile sign-in completed server-side, cookies only
@@ -781,16 +820,19 @@ reach an order that belongs to an account (only the owner or an admin can).
 │  │                                # order-card, order-status-timeline, track-order-form…
 │  ├─ admin/                        # admin-shell, dashboard-client, orders-client,
 │  │                                # products-client, product-form-dialog,
+│  │                                # settings-form,
 │  │                                # users-client, user-role-control, invite-staff-dialog,
 │  │                                # set-password-dialog,
 │  │                                # payment-verify-button, stat-card…
-│  └─ providers/                    # auth-provider, cart-hydrator, theme-provider
+│  └─ providers/                    # auth-provider, cart-hydrator, theme-provider,
+│                                   # site-settings-provider
 ├─ hooks/use-realtime.ts            # useRealtimeOrders · useRealtimeProducts · useLiveProduct
 │                                   # · useRealtimeUsers
 ├─ lib/
 │  ├─ supabase/{client,server,public,middleware}.ts
 │  ├─ queries.ts                    # server-side reads (React cache + unstable_cache)
 │  ├─ cache-tags.ts                 # shared cache-tag names
+│  ├─ site-settings.ts              # SiteSettings type, defaults, delivery-fee + ticker helpers
 │  ├─ storefront-refresh.ts         # client helper → /api/revalidate
 │  ├─ types.ts                      # Database type (mirrors the SQL schema)
 │  ├─ utils.ts                      # cn, BDT currency, delivery-area pricing, role metadata,
@@ -809,13 +851,15 @@ reach an order that belongs to an account (only the owner or an admin can).
 ├─ public/og-default.png            # 1200x630 default Open Graph card (committed)
 ├─ scripts/make-og-image.ps1        # re-renders it with GDI+ — no extra dependencies
 ├─ scripts/qa/                      # rls-probe · seo-probe · email-probe · image-probe
-│                                  # auth-probe · phone-probe · password-probe (+ README)
+│                                  # auth-probe · phone-probe · password-probe
+│                                  # settings-probe (+ README)
 ├─ supabase/migrations/             # 0001_init · 0002_seed · 0003_promote_admin
 │                                  # 0004_fix_orders_profiles_fk · 0005_bkash_payments
 │                                  # 0006_profile_avatars · 0007_require_auth_for_checkout
 │                                  # 0008_staff_roles · 0009_user_management
 │                                  # 0010_operator_scope · 0011_order_totals
 │                                  # 0012_delivery_area · 0013_remove_facebook_identity
+│                                  # 0014_site_settings
 └─ middleware.ts                    # session refresh + account-state + staff `/`→`/admin`,
                                     # /admin, /account, /checkout gates
 ```

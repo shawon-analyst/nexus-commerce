@@ -21,6 +21,16 @@ const PROTECTED_PREFIXES = ['/admin', '/account', '/checkout'];
 const AUTH_ROUTES = ['/login', '/register'];
 
 /**
+ * Console routes that need an *administrator*, not merely staff.
+ *
+ * The store settings own the delivery prices, the bKash wallet and the
+ * announcement bar, so an operator is bounced to the dashboard here — before the
+ * console shell starts streaming — and the page, the API route and the table's
+ * RLS policy enforce the same rule behind this.
+ */
+const ADMIN_ONLY_PREFIXES = ['/admin/settings'];
+
+/**
  * The public storefront home. Staff do not shop, so this is the one storefront
  * route that is *re-routed* rather than merely gated: an admin or operator who
  * lands on `/` — the logo, a bookmark, the browser back button — is handed to the
@@ -161,6 +171,15 @@ export async function updateSession(request: NextRequest) {
       // nothing else to branch on here.
       if (pathname.startsWith('/admin') && !staff) {
         return redirectTo(request, '/', '?error=admin-only');
+      }
+
+      // …with one exception: the store settings (delivery fees, the bKash wallet
+      // and the announcement bar) are administrator territory. Checking it here
+      // means an operator is bounced before the console shell streams a skeleton
+      // and then redirects; the page guard, the API route and the table's RLS
+      // policy still enforce the same rule behind this.
+      if (matchesAny(pathname, ADMIN_ONLY_PREFIXES) && profile?.role !== 'admin') {
+        return redirectTo(request, CONSOLE_HOME, '?error=admin-only');
       }
 
       // Somebody who is already signed in has no business on /login or /register.

@@ -1,3 +1,5 @@
+'use client';
+
 /**
  * The scrolling ticker above the header.
  *
@@ -7,15 +9,23 @@
  * copy is `aria-hidden` and exists purely so `translateX(-50%)` loops without a
  * visible seam.
  *
+ * The copy is editable in `/admin/settings`: `top_announcement_text` may hold
+ * several segments separated by `|`, and `top_announcement_enabled` hides the
+ * whole bar. If the row has no text (or the settings table is missing) the
+ * built-in lines below are used, so a fresh install is never a blank strip.
+ *
  * `prefers-reduced-motion` is honoured twice over: the CSS animations stop, and
  * the track keeps its static first frame.
  */
 
+import { useSiteSettings } from '@/components/providers/site-settings-provider';
+import { announcementSegments } from '@/lib/site-settings';
+
 /**
- * The running business lines. The leading emoji is part of the copy and reads
+ * The fallback business lines. The leading emoji is part of the copy and reads
  * as the bullet's icon, so no separate glyph is drawn beside it.
  */
-const MESSAGES = [
+const FALLBACK_MESSAGES = [
   '🚚 CASH ON DELIVERY AVAILABLE ALL OVER BANGLADESH — FAST 24-48 HOUR DELIVERY!',
   '💳 BKASH & NAGAD PAYMENTS ACCEPTED WITH INSTANT CONFIRMATION',
   '💯 100% GENUINE PRODUCTS WITH 7-DAYS EASY REPLACEMENT GUARANTEE',
@@ -37,6 +47,14 @@ function TickerItem({ text, hidden = false }: { text: string; hidden?: boolean }
 }
 
 export function AnnouncementBar() {
+  const settings = useSiteSettings();
+
+  // The toggle is the switch: off means no bar at all.
+  if (!settings.topAnnouncementEnabled) return null;
+
+  const configured = announcementSegments(settings);
+  const messages = configured.length > 0 ? configured : [...FALLBACK_MESSAGES];
+
   return (
     <aside
       className="announcement-surface relative overflow-hidden text-white"
@@ -56,11 +74,11 @@ export function AnnouncementBar() {
 
       <div className="relative flex py-2">
         <div className="flex w-max animate-marquee items-center motion-reduce:animate-none">
-          {MESSAGES.map((message) => (
-            <TickerItem key={message} text={message} />
+          {messages.map((message, index) => (
+            <TickerItem key={`${index}-${message}`} text={message} />
           ))}
-          {MESSAGES.map((message) => (
-            <TickerItem key={`${message}-clone`} text={message} hidden />
+          {messages.map((message, index) => (
+            <TickerItem key={`${index}-${message}-clone`} text={message} hidden />
           ))}
         </div>
       </div>

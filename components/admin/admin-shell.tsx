@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  Settings,
   ShieldCheck,
   ShoppingBag,
   Tags,
@@ -28,6 +29,8 @@ type NavItem = {
   label: string;
   icon: typeof LayoutDashboard;
   exact?: boolean;
+  /** Only rendered for an administrator — operators never see the link. */
+  adminOnly?: boolean;
 };
 
 const NAV: NavItem[] = [
@@ -40,6 +43,9 @@ const NAV: NavItem[] = [
   // administrator — enforced in SQL and hidden inside the page itself, never by
   // which links the sidebar happens to show.
   { href: '/admin/users', label: 'Users', icon: Users },
+  // Delivery fees, the bKash wallet and the announcement bar. Administrator-only
+  // because they are money and shop-wide copy; an operator runs orders and stock.
+  { href: '/admin/settings', label: 'Settings', icon: Settings, adminOnly: true },
 ];
 
 function NavLinks({
@@ -54,7 +60,9 @@ function NavLinks({
   const pathname = usePathname();
   // Mirrors `is_staff()`: admin or operator. A shopper reaching this component is
   // already a bug elsewhere — it still will not be handed a single link.
-  const items = isStaffRole(role) ? NAV : [];
+  const items = isStaffRole(role)
+    ? NAV.filter((item) => !item.adminOnly || role === 'admin')
+    : [];
 
   return (
     <nav className="flex flex-col gap-1">
@@ -176,13 +184,14 @@ export function AdminShell({
               <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
               <DialogPrimitive.Content
                 aria-describedby={undefined}
-                className="fixed inset-y-0 left-0 z-50 flex h-full w-[82%] max-w-xs flex-col border-r bg-background p-5 shadow-xl data-[state=open]:animate-in data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left"
+                className="fixed inset-y-0 left-0 z-50 flex h-full w-full max-w-[320px] flex-col overflow-y-auto overscroll-contain border-r bg-background px-4 py-5 shadow-xl data-[state=open]:animate-in data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left"
               >
-                <div className="flex items-center justify-between">
-                  <DialogPrimitive.Title className="flex items-center gap-2 text-sm font-bold">
-                    <ShieldCheck className="h-4 w-4" /> Admin console
+                <div className="flex items-center justify-between gap-2">
+                  <DialogPrimitive.Title className="flex min-w-0 items-center gap-2 text-sm font-bold">
+                    <ShieldCheck className="h-4 w-4 shrink-0" />
+                    <span className="truncate">Admin console</span>
                   </DialogPrimitive.Title>
-                  <DialogPrimitive.Close className="rounded-md p-1.5 text-muted-foreground hover:bg-accent">
+                  <DialogPrimitive.Close className="-mr-1 shrink-0 rounded-md p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
                     <X className="h-4 w-4" />
                     <span className="sr-only">Close</span>
                   </DialogPrimitive.Close>
@@ -197,12 +206,16 @@ export function AdminShell({
                     <Link
                       href="/products"
                       prefetch
-                      className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-accent"
+                      className="flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                     >
-                      <ExternalLink className="h-4 w-4" /> Browse catalogue
+                      <ExternalLink className="h-4 w-4 shrink-0" /> Browse catalogue
                     </Link>
                   )}
-                  <Button variant="ghost" className="w-full justify-start" onClick={() => void signOut()}>
+                  <Button
+                    variant="ghost"
+                    className="h-11 w-full justify-start px-3 text-muted-foreground hover:text-destructive"
+                    onClick={() => void signOut()}
+                  >
                     <LogOut className="h-4 w-4" /> Sign out
                   </Button>
                 </div>

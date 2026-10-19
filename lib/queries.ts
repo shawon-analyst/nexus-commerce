@@ -3,7 +3,12 @@ import { unstable_cache } from 'next/cache';
 import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
 import { createPublicClient } from '@/lib/supabase/public';
-import { CATEGORIES_TAG, PRODUCTS_TAG } from '@/lib/cache-tags';
+import { CATEGORIES_TAG, PRODUCTS_TAG, SETTINGS_TAG } from '@/lib/cache-tags';
+import {
+  DEFAULT_SITE_SETTINGS,
+  type SiteSettings,
+} from '@/lib/site-settings';
+import { toNumber } from '@/lib/utils';
 import type {
   AdminUserRow,
   Category,
@@ -13,6 +18,7 @@ import type {
   Product,
   ProductWithCategory,
   Profile,
+  SiteSettingsRow,
 } from '@/lib/types';
 
 /* -------------------------------------------------------------------------- */
@@ -21,7 +27,7 @@ import type {
 /*  so the storefront is instantly fresh *and* served from memory in-between. */
 /* -------------------------------------------------------------------------- */
 
-export { PRODUCTS_TAG, CATEGORIES_TAG };
+export { PRODUCTS_TAG, CATEGORIES_TAG, SETTINGS_TAG };
 
 /* -------------------------------------------------------------------------- */
 /*  Auth                                                                      */
@@ -219,6 +225,59 @@ const loadCategories = unstable_cache(
 );
 
 export const getCategories = cache(loadCategories);
+
+/* -------------------------------------------------------------------------- */
+/*  Site settings (delivery fees, bKash wallet, announcement bar)             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The singleton row of `public.site_settings`, mapped onto the client-safe
+ * `SiteSettings` shape.
+ *
+ * Two layers again: React `cache()` for one read per request, `unstable_cache`
+ * for one read per revalidate window. `SETTINGS_TAG` is what `/admin/settings`
+ * busts after a save, so an edited delivery fee is live on the next request
+ * rather than after five minutes.
+ *
+ * **Never throws.** A missing table (migration not applied), a missing row or a
+ * network hiccup all resolve to `DEFAULT_SITE_SETTINGS` — the shop keeps selling
+ * at ৳60 / ৳120 instead of taking the storefront down over a settings read.
+ */
+const loadSiteSettings = unstable_cache(
+  async (): Promise<SiteSettings> => {
+    const supabase = createPublicClient();
+    const { data, error } = await supabase
+      .from('site_settings')
+      .select('*')
+      .eq('id', 'site')
+      .maybeSingle();
+
+    if (error || !data) {
+      if (error) console.error('[getSiteSettings]', error.message);
+      return DEFAULT_SITE_SETTINGS;
+    }
+
+    const row = data as SiteSettingsRow;
+    return {
+      insideDhakaCharge: toNumber(row.inside_dhaka_charge, DEFAULT_SITE_SETTINGS.insideDhakaCharge),
+      outsideDhakaCharge: toNumber(
+        row.outside_dhaka_charge,
+        DEFAULT_SITE_SETTINGS.outsideDhakaCharge,
+      ),
+      freeShippingThreshold:
+        row.free_shipping_threshold === null
+          ? null
+          : toNumber(row.free_shipping_threshold, 0) || null,
+      bkashNumber: (row.bkash_number ?? '').trim() || DEFAULT_SITE_SETTINGS.bkashNumber,
+      topAnnouncementText: row.top_announcement_text ?? '',
+      topAnnouncementEnabled: row.top_announcement_enabled !== false,
+    };
+  },
+  ['site-settings'],
+  { revalidate: 300, tags: [SETTINGS_TAG] },
+);
+
+export const getSiteSettings = cache(loadSiteSettings);
 
 export type ProductQuery = {
   search?: string;

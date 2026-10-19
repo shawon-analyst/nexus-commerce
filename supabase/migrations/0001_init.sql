@@ -5,7 +5,7 @@
 --
 --  Contents
 --   1. Extensions & Enums
---   2. Tables          (profiles, categories, products, orders, order_items)
+--   2. Tables          (profiles, categories, products, orders, order_items, site_settings)
 --   3. Helper functions (is_admin, is_staff, updated_at, role/active guard)
 --   4. Auth -> profile sync trigger (+ automatic e-mail confirmation)
 --   5. AUTOMATION: stock decrement on order + auto-restore on cancellation
@@ -26,7 +26,7 @@
 --  path that introduces `operator` and `profiles.is_active` on a live database.
 --
 --  The script is idempotent: it can be re-run safely.
---  §2.7 also repairs an `orders.user_id` foreign key left pointing at
+--  §2.8 also repairs an `orders.user_id` foreign key left pointing at
 --  auth.users by an older revision of this file — see 0004_*.sql for a
 --  stand-alone version of that repair, 0005_*.sql for the bKash + auto-confirm
 --  upgrade, and 0007/0008/0009 for the account-only checkout and RBAC upgrades.
@@ -130,7 +130,9 @@ create table if not exists public.orders (
   -- and so a later change to the fee can never rewrite history.
   total_amount      numeric(12,2) not null default 0 check (total_amount >= 0),
   shipping_fee      numeric(12,2) not null default 0 check (shipping_fee >= 0),
-  -- Which delivery charge applied: 'inside' (৳60) or 'outside' (৳120) Dhaka.
+  -- Which delivery charge applied: 'inside' or 'outside' Dhaka. The amounts live
+  -- in public.site_settings; place_order() snapshots the chosen one into
+  -- shipping_fee so later price changes never rewrite history.
   delivery_area     text not null default 'inside'
                       check (delivery_area in ('inside', 'outside')),
   status            public.order_status not null default 'pending',
@@ -194,7 +196,47 @@ create table if not exists public.order_items (
   created_at     timestamptz not null default now()
 );
 
--- 2.6 indexes ----------------------------------------------------------------
+-- 2.6 site_settings -----------------------------------------------------------
+--     One singleton row holds the shop's numbers: the two delivery charges, the
+--     bKash wallet and the announcement-bar copy. `/admin/settings` writes it and
+--     `place_order()` reads the fees from here, so the checkout and the database
+--     cannot disagree. `free_shipping_threshold` is reserved and never applied.
+create table if not exists public.site_settings (
+  id                       text primary key default 'site'
+                             check (id = 'site'),
+  inside_dhaka_charge      numeric(12,2) not null default 60
+                             check (inside_dhaka_charge >= 0 and inside_dhaka_charge <= 100000),
+  outside_dhaka_charge     numeric(12,2) not null default 120
+                             check (outside_dhaka_charge >= 0 and outside_dhaka_charge <= 100000),
+  free_shipping_threshold  numeric(12,2)
+                             check (free_shipping_threshold is null or free_shipping_threshold >= 0),
+  bkash_number             text not null default '01789138295',
+  top_announcement_text    text not null default '',
+  top_announcement_enabled boolean not null default true,
+  updated_at               timestamptz not null default now(),
+  updated_by               uuid references public.profiles(id) on delete set null
+);
+
+comment on table  public.site_settings is
+  'Singleton storefront configuration (delivery fees, bKash wallet, announcement bar). Read by the shop, written by /admin/settings.';
+comment on column public.site_settings.free_shipping_threshold is
+  'Reserved. Stored for schema completeness but deliberately NOT applied — the free-delivery threshold was retired in 0012.';
+
+-- `on conflict do nothing`: re-running the file never overwrites what an
+-- administrator has saved.
+insert into public.site_settings
+  (id, inside_dhaka_charge, outside_dhaka_charge, bkash_number,
+   top_announcement_text, top_announcement_enabled)
+values
+  ('site', 60, 120, '01789138295',
+   '🚚 CASH ON DELIVERY AVAILABLE ALL OVER BANGLADESH — FAST 24-48 HOUR DELIVERY!'
+   ' | 💳 BKASH & NAGAD PAYMENTS ACCEPTED WITH INSTANT CONFIRMATION'
+   ' | 💯 100% GENUINE PRODUCTS WITH 7-DAYS EASY REPLACEMENT GUARANTEE'
+   ' | 📞 NEED HELP ORDERING? CHAT WITH US ON WHATSAPP OR MESSENGER!',
+   true)
+on conflict (id) do nothing;
+
+-- 2.7 indexes ----------------------------------------------------------------
 create index if not exists profiles_role_idx          on public.profiles(role);
 create index if not exists products_category_idx      on public.products(category_id);
 create index if not exists products_created_idx       on public.products(created_at desc);
@@ -208,7 +250,7 @@ create index if not exists order_items_product_idx    on public.order_items(prod
 
 
 -- ---------------------------------------------------------------------------
--- 2.7 orders -> profiles : self-healing foreign key
+-- 2.8 orders -> profiles : self-healing foreign key
 --
 --     The admin order console embeds the customer with
 --       .select('*, order_items(*), profiles(full_name, email)')
@@ -362,6 +404,13 @@ create trigger trg_products_touch
 drop trigger if exists trg_orders_touch on public.orders;
 create trigger trg_orders_touch
   before update on public.orders
+  for each row execute function public.touch_updated_at();
+
+-- The `site_settings` table is created in §2.6; its touch trigger lives here
+-- because `touch_updated_at()` is defined in §3.3.
+drop trigger if exists trg_site_settings_touch on public.site_settings;
+create trigger trg_site_settings_touch
+  before update on public.site_settings
   for each row execute function public.touch_updated_at();
 
 
@@ -676,11 +725,14 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
-  -- Delivery pricing, mirrored from lib/utils.ts (DELIVERY_AREA_META). The cart
-  -- quotes the JS copy and this stores the SQL copy, so when one moves the
-  -- other must move with it.
-  c_delivery_inside  constant numeric(12,2) := 60;
-  c_delivery_outside constant numeric(12,2) := 120;
+  -- Fallbacks only: the live values come from public.site_settings below. They
+  -- match the column defaults, so a database that has the table but somehow no
+  -- row still charges the documented ৳60 / ৳120.
+  c_fallback_inside  constant numeric(12,2) := 60;
+  c_fallback_outside constant numeric(12,2) := 120;
+
+  v_delivery_inside  numeric(12,2) := c_fallback_inside;
+  v_delivery_outside numeric(12,2) := c_fallback_outside;
 
   v_order_id  uuid;
   v_user_id   uuid;
@@ -762,6 +814,14 @@ begin
     raise exception 'UNSUPPORTED_PAYMENT_METHOD: %', v_method using errcode = 'P0001';
   end if;
 
+  -- `online` (card / wallet) is displayed as "Coming soon" and its radio is
+  -- disabled. Refusing it here is the real barrier: the enum value survives only
+  -- so historical orders keep rendering.
+  if v_method = 'online' then
+    raise exception 'PAYMENT_METHOD_UNAVAILABLE: online card payments are not available yet'
+      using errcode = 'P0001';
+  end if;
+
   v_trxid := nullif(trim(coalesce(p_transaction_id, '')), '');
 
   if v_method = 'bkash' then
@@ -774,6 +834,18 @@ begin
     v_payment_status := 'pending_verification';
   else
     v_payment_status := 'unpaid';
+  end if;
+
+  -- The one source of truth for the two charges. `not found` covers a missing
+  -- row; the constants above stay in place in that case.
+  select s.inside_dhaka_charge, s.outside_dhaka_charge
+    into v_delivery_inside, v_delivery_outside
+  from public.site_settings s
+  where s.id = 'site';
+
+  if not found then
+    v_delivery_inside  := c_fallback_inside;
+    v_delivery_outside := c_fallback_outside;
   end if;
 
   -- 1. price every line from the database — never from the client
@@ -809,8 +881,8 @@ begin
   --    recording the goods alone made "lifetime spend" and the admin revenue
   --    understate every order by the fee.
   v_shipping := case v_area
-                  when 'outside' then c_delivery_outside
-                  else c_delivery_inside
+                  when 'outside' then v_delivery_outside
+                  else v_delivery_inside
                 end;
   v_total := v_subtotal + v_shipping;
 
@@ -1438,6 +1510,28 @@ create policy "order_items_staff_all" on public.order_items
   for all to authenticated
   using (public.is_staff())
   with check (public.is_staff());
+
+-- 7.6 site_settings (public read, administrator write) ------------------------
+alter table public.site_settings enable row level security;
+
+-- The storefront reads this on every page (ticker, delivery quote, bKash wallet),
+-- signed out included, so `anon` needs SELECT.
+drop policy if exists "site_settings_public_read" on public.site_settings;
+create policy "site_settings_public_read" on public.site_settings
+  for select to anon, authenticated using (true);
+
+-- Money and shop-wide copy are administrator territory, not operator: an
+-- operator runs orders and stock, an administrator owns the prices. No INSERT /
+-- DELETE policy: the row is seeded above and must never be duplicated or removed
+-- through the API.
+drop policy if exists "site_settings_admin_update" on public.site_settings;
+create policy "site_settings_admin_update" on public.site_settings
+  for update to authenticated
+  using (public.is_admin())
+  with check (public.is_admin());
+
+grant select on public.site_settings to anon, authenticated;
+grant update on public.site_settings to authenticated;
 
 
 -- ===========================================================================
