@@ -3,11 +3,12 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Eye, EyeOff, Info, LogIn, Mail, Smartphone } from 'lucide-react';
+import { Info, LogIn, Mail, Smartphone } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PasswordInput } from '@/components/ui/password-input';
 import { AuthDivider } from '@/components/auth/auth-divider';
 import { GoogleSignInButton } from '@/components/auth/google-button';
 import { IdentifierTabs } from '@/components/auth/identifier-tabs';
@@ -32,10 +33,44 @@ export function LoginForm({ redirectTo = '/' }: { redirectTo?: string }) {
   const [email, setEmail] = React.useState('');
   const [phone, setPhone] = React.useState('');
   const [password, setPassword] = React.useState('');
-  const [showPassword, setShowPassword] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
 
   const typed = mode === 'email' ? email : phone;
+
+  /**
+   * Finish a mobile sign-in on the server, when the ordinary alias attempt failed.
+   *
+   * Returns `true` when the server signed the browser in — the page is already
+   * navigating by then — and `false` to let the caller show its ordinary error.
+   *
+   * The navigation is a real one, not `router.push`: the session was written as a
+   * response cookie this browser client never held, so the document has to be
+   * re-fetched before the auth provider and the header agree someone is signed in.
+   */
+  async function signInWithServerFallback(
+    phone: string,
+    password: string,
+    destination: string,
+  ): Promise<boolean> {
+    try {
+      const response = await fetch('/api/auth/phone-signin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, password, redirectTo: destination }),
+      });
+
+      if (!response.ok) return false;
+
+      const payload = (await response.json().catch(() => null)) as { redirectTo?: string } | null;
+      const next = payload?.redirectTo;
+      window.location.assign(
+        typeof next === 'string' && next.startsWith('/') ? next : destination,
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -58,6 +93,21 @@ export function LoginForm({ redirectTo = '/' }: { redirectTo?: string }) {
       });
 
       if (error) {
+        /*
+         * The one failure a mobile number can come back from.
+         *
+         * Linking a recovery e-mail replaces the generated `…@phone.…` alias as
+         * the account's auth address, so the attempt above — which sends the
+         * alias — stops matching. `/api/auth/phone-signin` resolves the number to
+         * whatever address Auth now holds and finishes the sign-in on the server,
+         * where the service-role key lives. Only "invalid credentials" is retried:
+         * a network failure is not worth a second round trip.
+         */
+        if (mode === 'phone' && resolved.phone && /invalid login credentials/i.test(error.message)) {
+          const recovered = await signInWithServerFallback(resolved.phone, password, redirectTo);
+          if (recovered) return;
+        }
+
         toast.error('Sign in failed', { description: humanizeError(error) });
         return;
       }
@@ -146,39 +196,28 @@ export function LoginForm({ redirectTo = '/' }: { redirectTo?: string }) {
             Forgot password?
           </Link>
         </div>
-        <div className="relative">
-          <Input
-            id="login-password"
-            type={showPassword ? 'text' : 'password'}
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            placeholder="••••••••"
-            autoComplete="current-password"
-            className="pr-10"
-            required
-          />
-          <button
-            type="button"
-            onClick={() => setShowPassword((value) => !value)}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground transition-colors hover:bg-accent"
-            aria-label={showPassword ? 'Hide password' : 'Show password'}
-          >
-            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-          </button>
-        </div>
+        <PasswordInput
+          id="login-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          placeholder="••••••••"
+          autoComplete="current-password"
+          required
+        />
       </div>
 
       {/*
-       * A mobile-only account has no mailbox, so there is no recovery address to
-       * send a reset link to. Saying so here is far kinder than letting the
-       * shopper discover it on the help page.
+       * A mobile-only account has no mailbox of its own, so there is no recovery
+       * address to send a reset link to until the shopper adds one on their
+       * profile. Saying so here is kinder than letting them discover it on the
+       * help page.
        */}
       {mode === 'phone' && (
         <p className="flex items-start gap-2.5 rounded-xl border border-amber-500/25 bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-900 dark:text-amber-200">
           <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
           <span>
-            A mobile number signs in with this password only — we cannot email a reset link to
-            it. If you forget it, contact support and we will help you back in.
+            A mobile number signs in with this password. Add a recovery email on your profile and
+            we can also e-mail you a reset link — without one, support has to reset it for you.
           </span>
         </p>
       )}

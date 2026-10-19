@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { Ban, Loader2, Trash2 } from 'lucide-react';
+import { Ban, KeyRound, Loader2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { accountLabel } from '@/lib/identity';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { ASSIGNABLE_ROLES, cn, humanizeError, userRoleMeta } from '@/lib/utils';
 import type { AdminUserRow, UserRole } from '@/lib/types';
@@ -119,7 +120,7 @@ export function UserRoleSelect({
         }
 
         const updated = data as unknown as AdminUserRow;
-        toast.success(`${updated.email || user.email} is now ${userRoleMeta(next).label}`);
+        toast.success(`${accountLabel({ ...user, ...updated })} is now ${userRoleMeta(next).label}`);
         onChanged?.({ ...user, ...updated });
         // the dashboard's customer figure and the nav badges come from RSC
         router.refresh();
@@ -141,7 +142,7 @@ export function UserRoleSelect({
     >
       <SelectTrigger
         className="h-9 w-[9.5rem] [&_[data-role-hint]]:hidden"
-        aria-label={`Role for ${user.full_name ?? user.email}`}
+        aria-label={`Role for ${accountLabel(user)}`}
         title={disabled ? disabledHint : userRoleMeta(value).description}
       >
         {pending ? (
@@ -195,12 +196,18 @@ export function UserRowActions({
   disabledHint,
   onChanged,
   onRequestDelete,
+  onRequestSetPassword,
 }: {
   user: AdminUserRow;
   disabled?: boolean;
   disabledHint?: string;
   onChanged?: (profile: AdminUserRow) => void;
   onRequestDelete?: (user: AdminUserRow) => void;
+  /**
+   * Opens the admin's "set a password" dialog. Omitted for a viewer who may not
+   * use it, in which case the button is not rendered at all.
+   */
+  onRequestSetPassword?: (user: AdminUserRow) => void;
 }) {
   const router = useRouter();
   const [pending, setPending] = React.useState(false);
@@ -231,8 +238,8 @@ export function UserRowActions({
       const updated = data as unknown as AdminUserRow;
       toast.success(
         updated.is_active
-          ? `${updated.email || user.email} can sign in again`
-          : `${updated.email || user.email} has been blocked`,
+          ? `${accountLabel({ ...user, ...updated })} can sign in again`
+          : `${accountLabel({ ...user, ...updated })} has been blocked`,
         updated.is_active
           ? undefined
           : {
@@ -251,6 +258,20 @@ export function UserRowActions({
 
   return (
     <div className="flex items-center justify-end gap-2">
+      {onRequestSetPassword && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-9"
+          disabled={disabled}
+          title={disabled ? disabledHint : 'Set a new password for this account'}
+          onClick={() => onRequestSetPassword(user)}
+        >
+          <KeyRound className="h-4 w-4" />
+          <span className="sr-only sm:not-sr-only">Password</span>
+        </Button>
+      )}
+
       <Button
         variant="outline"
         size="sm"

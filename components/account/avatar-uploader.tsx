@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { accountLabel, displayEmail } from '@/lib/identity';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { humanizeError } from '@/lib/utils';
 import type { Profile } from '@/lib/types';
@@ -194,7 +195,7 @@ export function AvatarUploader({
         <UserAvatar
           src={profile.avatar_url}
           name={profile.full_name}
-          email={profile.email}
+          email={displayEmail(profile.email) ?? profile.phone}
           className="h-24 w-24 text-2xl ring-2 ring-background"
           sizes="96px"
         />
@@ -230,7 +231,7 @@ export function AvatarUploader({
 
       <div className="space-y-1">
         <p className="text-sm font-semibold">
-          {profile.full_name?.trim() || profile.email}
+          {accountLabel(profile)}
         </p>
         <p className="text-xs text-muted-foreground">PNG, JPG, WEBP or GIF · up to 2 MB</p>
       </div>

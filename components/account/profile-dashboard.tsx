@@ -23,8 +23,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { OrderStatusBadge } from '@/components/ui/status-badge';
 import { AvatarUploader } from '@/components/account/avatar-uploader';
+import { ChangePasswordCard } from '@/components/account/change-password-card';
 import { EditProfileDialog } from '@/components/account/edit-profile-dialog';
+import { RecoveryEmailCard } from '@/components/account/recovery-email-card';
 import { useAuth } from '@/components/providers/auth-provider';
+import { NO_EMAIL_LABEL, accountLabel, displayEmail } from '@/lib/identity';
 import { cn, formatCurrency, formatDate, toNumber } from '@/lib/utils';
 import type { OrderWithItems, Profile } from '@/lib/types';
 
@@ -77,11 +80,11 @@ function DetailRow({
       <div className="min-w-0 flex-1">
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
         {/*
-         * `break-words` is load-bearing, not cosmetic: an e-mail address such as
-         * `qa.avatar.1792296407@nexuscommerce.dev` is one unbreakable 300px token,
-         * and this row lives in a flex column that is allowed to shrink
-         * (`min-w-0 flex-1`). Without a break opportunity the text spilled out of
-         * the card and gave `/account` a horizontal scrollbar on a 390px phone.
+         * `break-words` is load-bearing, not cosmetic: a delivery address or a
+         * long e-mail local-part is one unbreakable token, and this row lives in
+         * a flex column that is allowed to shrink (`min-w-0 flex-1`). Without a
+         * break opportunity the text spilled out of the card and gave `/account`
+         * a horizontal scrollbar on a 390px phone.
          */}
         <p
           className={cn(
@@ -133,7 +136,14 @@ export function ProfileDashboard({
   }, [orders]);
 
   const recentOrders = orders.slice(0, 3);
-  const displayName = profile.full_name?.trim() || profile.email;
+  /*
+   * The name a shopper is greeted with — and, in the "Signed in as" note, the
+   * label for their account. `profile.email` is deliberately never the fallback:
+   * for a mobile-number account it is the generated `…@phone.…` alias, which the
+   * customer must never be shown. `accountLabel()` walks name → real e-mail →
+   * mobile number and stops before the alias.
+   */
+  const displayName = accountLabel(profile);
 
   return (
     <div className="space-y-8">
@@ -240,7 +250,12 @@ export function ProfileDashboard({
                   value={profile.full_name}
                   fallback="Not set yet"
                 />
-                <DetailRow icon={Mail} label="Email" value={profile.email} fallback="Not set yet" />
+                <DetailRow
+                  icon={Mail}
+                  label="Email"
+                  value={displayEmail(profile.email)}
+                  fallback={NO_EMAIL_LABEL}
+                />
                 <DetailRow
                   icon={Phone}
                   label="Phone number"
@@ -256,6 +271,17 @@ export function ProfileDashboard({
               </div>
             </CardContent>
           </Card>
+
+          {/* ------------------------------------------------------------ *
+           *  Security                                                      *
+           *                                                               *
+           *  Changing a password and pointing recovery at a real mailbox   *
+           *  both belong to the account, not the profile row. The recovery  *
+           *  card renders nothing for an OAuth-only account, which already *
+           *  has a working address.                                        *
+           * ------------------------------------------------------------ */}
+          <ChangePasswordCard />
+          <RecoveryEmailCard profile={profile} onUpdated={handleUpdated} />
 
           {/* ------------------------------------------------------------ *
            *  Recent orders                                                *

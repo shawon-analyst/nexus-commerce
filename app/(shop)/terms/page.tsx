@@ -83,6 +83,13 @@ export default function TermsOfServicePage() {
             carefully when you register. Your password is what protects the account.
           </li>
           <li>
+            Because a mobile number has no inbox, add a <strong className="text-foreground">recovery
+            email</strong> from your profile if you want to reset your own password. It becomes both
+            the account&rsquo;s recovery address and a sign-in address; the mobile number keeps
+            working. If you never add one, only an administrator can reset the password — and they
+            will do it only after checking that it is really you.
+          </li>
+          <li>
             Staff and operator accounts (used to run the store) cannot place orders. If you are signed
             in to one, switch to a customer account to buy.
           </li>

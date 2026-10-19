@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/table';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { InviteStaffDialog } from '@/components/admin/invite-staff-dialog';
+import { SetPasswordDialog } from '@/components/admin/set-password-dialog';
 import {
   UserRoleBadge,
   UserRoleSelect,
@@ -44,6 +45,7 @@ import {
   UserStatusBadge,
 } from '@/components/admin/user-role-control';
 import { useRealtimeUsers } from '@/hooks/use-realtime';
+import { NO_EMAIL_LABEL, accountDetail, accountLabel, displayEmail, isGeneratedEmail } from '@/lib/identity';
 import {
   ASSIGNABLE_ROLES,
   cn,
@@ -129,6 +131,8 @@ export function UsersClient({
   const [onlyBlocked, setOnlyBlocked] = React.useState(false);
   const [deleteTarget, setDeleteTarget] = React.useState<AdminUserRow | null>(null);
   const [deleting, setDeleting] = React.useState(false);
+  /** The account whose password is being set, if the dialog is open. */
+  const [passwordTarget, setPasswordTarget] = React.useState<AdminUserRow | null>(null);
 
   const stats = React.useMemo(() => {
     const staff = users.filter((user) => user.role === 'admin' || user.role === 'operator');
@@ -197,7 +201,7 @@ export function UsersClient({
       }
 
       remove(deleteTarget.id);
-      toast.success(`${deleteTarget.email || deleteTarget.full_name || 'The account'} was deleted`, {
+      toast.success(`${accountLabel(deleteTarget)} was deleted`, {
         description: 'Their orders are kept as guest orders, so the sales history is intact.',
       });
       setDeleteTarget(null);
@@ -400,6 +404,17 @@ export function UsersClient({
                 const orders = toNumber(user.order_count);
                 const spent = toNumber(user.total_spent);
 
+                /*
+                 * `user.email` can be a generated address — the `…@phone.…` alias
+                 * for a mobile-number account, or a QA seed on the shop's own
+                 * domain. It is never displayed; the row shows the address only
+                 * when there is a real one, and otherwise the number the account
+                 * signs in with. Searching (above) still matches the raw value, so
+                 * staff can find an account by whatever the database holds.
+                 */
+                const shownEmail = displayEmail(user.email);
+                const identityLine = accountDetail(user);
+
                 return (
                   <TableRow key={user.id} className={cn(!user.is_active && 'bg-rose-50/40 dark:bg-rose-500/5')}>
                     <TableCell className="align-top">
@@ -407,7 +422,7 @@ export function UsersClient({
                         <UserAvatar
                           src={user.avatar_url}
                           name={user.full_name}
-                          email={user.email}
+                          email={shownEmail ?? user.phone}
                           className="h-9 w-9 shrink-0"
                         />
                         <div className="min-w-0">
@@ -420,14 +435,27 @@ export function UsersClient({
                             )}
                           </p>
                           {/* the e-mail column is hidden on phones, so repeat it here */}
-                          <p className="truncate text-xs text-muted-foreground md:hidden">{user.email}</p>
+                          <p className="truncate text-xs text-muted-foreground md:hidden">
+                            {identityLine}
+                          </p>
                         </div>
                       </div>
                     </TableCell>
 
                     <TableCell className="hidden align-top md:table-cell">
-                      <span className="text-sm">{user.email || '—'}</span>
+                      {shownEmail ? (
+                        <span className="text-sm">{shownEmail}</span>
+                      ) : (
+                        <span className="text-sm italic text-muted-foreground">
+                          {NO_EMAIL_LABEL}
+                        </span>
+                      )}
                       {user.phone && <p className="text-xs text-muted-foreground">{user.phone}</p>}
+                      {isGeneratedEmail(user.email) && (
+                        <span className="mt-1 inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          Mobile sign-in
+                        </span>
+                      )}
                     </TableCell>
 
                     <TableCell className="align-top">
@@ -485,6 +513,7 @@ export function UsersClient({
                           disabledHint={hint}
                           onChanged={(updated) => upsert(updated)}
                           onRequestDelete={(target) => setDeleteTarget(target)}
+                          onRequestSetPassword={(target) => setPasswordTarget(target)}
                         />
                       ) : (
                         <p
@@ -515,7 +544,7 @@ export function UsersClient({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Trash2 className="h-4 w-4 text-destructive" />
-              Delete {deleteTarget?.full_name || deleteTarget?.email}?
+              Delete {deleteTarget ? accountLabel(deleteTarget) : 'this account'}?
             </DialogTitle>
             <DialogDescription>
               This removes the account and its sign-in for good — they would have to register again.
@@ -547,6 +576,16 @@ export function UsersClient({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ---------------------------------------------------------------- */}
+      {/* Set password                                                     */}
+      {/* ---------------------------------------------------------------- */}
+      <SetPasswordDialog
+        user={passwordTarget}
+        onOpenChange={(open) => {
+          if (!open) setPasswordTarget(null);
+        }}
+      />
     </div>
   );
 }

@@ -41,6 +41,22 @@ export function createClient() {
 }
 
 /**
+ * A throwaway anonymous client — no cookies, no persisted session.
+ *
+ * Used where a Route Handler has to *check credentials* without becoming the
+ * caller's session: verifying the current password before an administrator-style
+ * account change, for instance. It shares nothing with `createClient()`, so
+ * nothing it stores can leak into (or overwrite) the caller's real session.
+ */
+export function createAnonClient() {
+  return createSupabaseJsClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } },
+  );
+}
+
+/**
  * Privileged client using the service-role key. NEVER import this into a
  * Client Component. Only created when the env var is present, so the app keeps
  * working without it.

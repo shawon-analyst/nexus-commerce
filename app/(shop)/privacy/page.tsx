@@ -96,6 +96,13 @@ export default function PrivacyPolicyPage() {
             carefully when you register.
           </li>
           <li>
+            <strong className="text-foreground">Recovery email</strong> — a mobile-number account has
+            no mailbox of its own, so if you add a recovery email address we store it as the
+            account&rsquo;s address and use it only to send password-reset links. Adding one also
+            makes it a sign-in address; your mobile number keeps working. An administrator can also
+            set a new password for you directly if you cannot recover the account yourself.
+          </li>
+          <li>
             <strong className="text-foreground">Order and delivery details</strong> — the items you
             order, the delivery address and phone number you give us, your chosen delivery area
             (inside or outside Dhaka) and any note you add to the order.

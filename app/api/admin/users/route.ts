@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient, createClient } from '@/lib/supabase/server';
+import { MIN_PASSWORD_LENGTH } from '@/lib/password';
 import { creatableRole, humanizeError } from '@/lib/utils';
 import type { AdminUserRow, UserRole } from '@/lib/types';
 
@@ -19,7 +20,9 @@ export const runtime = 'nodejs';
  *   staff (`is_staff()`) — create an account. An operator passes this check and
  *     `creatableRole()` caps what they may create at `customer`; asking for
  *     anything else is refused rather than quietly downgraded.
- *   admin (`is_admin()`) — delete an account.
+ *   admin (`is_admin()`) — delete an account, or set its password outright
+ *     (PATCH). Both are administrator actions: a forced password is equivalent to
+ *     taking the account over, so it sits at the same level as deletion.
  *
  * The service-role key never leaves the server: the caller is authenticated with
  * their own cookies and re-checked against the database before anything happens.
@@ -122,8 +125,8 @@ export async function POST(request: Request) {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return fail(400, 'INVALID_EMAIL', 'Enter a valid e-mail address.');
   }
-  if (password.length < 6) {
-    return fail(400, 'WEAK_PASSWORD', 'The password must be at least 6 characters.');
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return fail(400, 'WEAK_PASSWORD', `The password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
   }
 
   // What this caller may hand out: an operator creates customers, only an
@@ -285,5 +288,71 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ ok: true, deleted: userId });
   } catch (error) {
     return fail(500, 'DELETE_FAILED', humanizeError(error));
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  PATCH — set an account's password directly                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The escape hatch that mobile-number accounts need: an administrator types a
+ * password and GoTrue stores it, with no e-mail, no magic link and no dependency
+ * on a mailbox the account may not have.
+ *
+ * It is administrator-only, not staff, because it takes over an account in the
+ * same way deletion removes one. Nothing is emailed to the account holder, so the
+ * success toast says plainly that the password has to be passed on by hand.
+ */
+export async function PATCH(request: Request) {
+  const guard = await authorize('admin');
+  if (!guard.ok) return fail(guard.status, guard.error, 'detail' in guard ? guard.detail : undefined);
+
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return fail(
+      503,
+      'SERVICE_ROLE_REQUIRED',
+      'Set SUPABASE_SERVICE_ROLE_KEY to set passwords directly — GoTrue will not do it with the anon key.',
+    );
+  }
+
+  let body: { user_id?: unknown; password?: unknown };
+  try {
+    body = await request.json();
+  } catch {
+    return fail(400, 'INVALID_JSON');
+  }
+
+  const userId = typeof body.user_id === 'string' ? body.user_id : '';
+  const password = typeof body.password === 'string' ? body.password : '';
+
+  if (!/^[0-9a-f-]{36}$/i.test(userId)) {
+    return fail(400, 'INVALID_USER_ID');
+  }
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return fail(
+      400,
+      'WEAK_PASSWORD',
+      `The password must be at least ${MIN_PASSWORD_LENGTH} characters.`,
+    );
+  }
+
+  try {
+    const admin = createAdminClient();
+
+    const { data, error } = await admin.auth.admin.updateUserById(userId, { password });
+
+    if (error) {
+      const missing = /not found|does not exist/i.test(error.message);
+      return fail(
+        missing ? 404 : 500,
+        missing ? 'USER_NOT_FOUND' : 'UPDATE_FAILED',
+        humanizeError(error.message),
+      );
+    }
+
+    return NextResponse.json({ ok: true, updated: data.user?.id ?? userId });
+  } catch (error) {
+    return fail(500, 'UPDATE_FAILED', humanizeError(error));
   }
 }

@@ -389,11 +389,23 @@ confine every file to `avatars/<uid>/…` (`storage.foldername(name)[1] =
 auth.uid()`, 2 MB, image MIME types only). Replacing a picture deletes the
 previous *uploaded* file — an external Google URL is never deleted.
 
-#### Password recovery
+#### Changing a password
 
-`/forgot-password` never builds a link by hand: it calls
-`supabase.auth.resetPasswordForEmail()` with `redirectTo` pointing at
-`/auth/callback?redirectTo=/reset-password`, so the **same** landing strip that
+Four paths reach a password, and each one names what it has to prove first.
+
+**1. Knowing the current one.** `/account` has a *Change password* card: current
+password, new password, confirm — each with its own show/hide toggle. The current
+password is checked against Auth (`signInWithPassword` on a throwaway client)
+*before* `supabase.auth.updateUser({ password })` is called, so a session left
+open on a shared machine cannot be used to lock the owner out. The shared policy
+lives in `lib/password.ts` (`MIN_PASSWORD_LENGTH`, the strength meter) and both
+the card and the server-side routes read from it. An account that has only ever
+signed in with Google has no password to confirm with, so the card is replaced by
+a "set a password" variant.
+
+**2. Holding a session on the inbox.** `/forgot-password` never builds a link by
+hand: it calls `supabase.auth.resetPasswordForEmail()` with `redirectTo` pointing
+at `/auth/callback?redirectTo=/reset-password`, so the **same** landing strip that
 handles OAuth also mints the recovery session. The callback additionally accepts
 the `token_hash` + `type=recovery` shape Supabase's default mail template sends
 (`verifyOtp`), and it knows a *recovery* failure belongs back on
@@ -406,6 +418,96 @@ the implicit (`#access_token=…`) flow. The new password goes nowhere but
 written to a log, a toast, or an analytics call. The confirmation screen is
 deliberately vague ("if that address has an account…") so it can never be used to
 probe which e-mails are registered.
+
+**3. A mobile account with a linked recovery address.** A number registered
+without a mailbox has nothing for path 2 to mail, so `/account` offers a *Recovery
+email* card (see the section after next). `/forgot-password` accepts a mobile
+number too: the form recognises one, the *shape* of the input alone deciding, and
+`/api/auth/recover` resolves it with the service role. When the account has no
+linked address the route answers `no-recovery-email` and the form says so
+verbatim:
+
+> No recovery email is linked to this account. Please contact admin support to reset their account password.
+
+A number that is not registered gets the identical answer, so the route is
+useless for finding out which numbers have accounts.
+
+**4. An administrator, by hand.** `/admin/users` has a *Password* action beside
+each row — administrator-only, the same level as deletion, because it takes the
+account over. It calls `supabase.auth.admin.updateUserById(id, { password })` with
+the service-role key: no e-mail, no magic link, no dependency on a mailbox the
+account may not own. Nothing is sent to the account holder, and the success toast
+says so, because the password then has to be passed on by hand.
+
+#### Recovery e-mail
+
+The recovery address is *not* a column of its own, and that is the whole design.
+`resetPasswordForEmail()` can only reach the address GoTrue holds on the account,
+so a linked address that was merely stored in `profiles.recovery_email` could
+never actually receive a reset link — the flow would exist and never deliver.
+Linking a recovery address therefore **replaces the account's auth e-mail**, and
+that has consequences the UI states plainly.
+
+The change is done by the `POST /api/account/recovery-email` route, because the
+browser cannot do it: the project has **secure e-mail change** on, so
+`updateUser({ email })` wants confirmation from both the old *and* the new
+address — and a mobile account's old address is the generated alias, a mailbox
+that does not exist. The change would sit half-finished forever. The service-role
+Admin API writes the new address directly (`email_confirm: true`), which is the
+same operation GoTrue performs once both confirmations land.
+
+Since that skips the e-mail round trip, ownership is proved with the **current
+password** instead: the route re-authenticates against the *current* address on a
+throwaway anon client before touching the auth record. A stolen session cookie on
+its own is not enough to point recovery at somebody else's mailbox.
+
+Two consequences follow, and both are deliberate:
+
+- **The linked address becomes a sign-in address.** The number keeps working,
+  because `/api/auth/phone-signin` resolves it to whatever address Auth now holds
+  (below). The generated alias stops working — which is correct: it was never a
+  real mailbox.
+- **The admin users table must not show the alias.** It never does; see *What may
+  be shown* below.
+
+Accounts that only ever signed in with Google are told the change is not open to
+them: they have no password to confirm with. They already have a real, working
+address, so path 2 above works for them unchanged.
+
+#### Mobile sign-in survives a changed address
+
+The *Mobile* tab still tries the alias sign-in first, in the browser, because that
+is the ordinary case and it keeps its ordinary toast and `router.push`. It only
+calls `POST /api/auth/phone-signin` when GoTrue answers *invalid credentials*,
+which — for an account whose number is still registered — means exactly one
+thing: a recovery address was linked and the alias is gone.
+
+That route resolves the number with the service role and completes
+`signInWithPassword` server-side, returning the **session cookies** and a
+destination and nothing else. The address never crosses back to the browser.
+Failure is uniform: a wrong password, an unknown number and a number GoTrue
+refuses all answer `401 INVALID_CREDENTIALS`, so the endpoint cannot be used to
+test which numbers have accounts. Because the session is written by the route and
+not by the browser client, the client finishes with a full navigation
+(`window.location.assign`) rather than `router.refresh()` — the provider's copy of
+the user would otherwise stay stale.
+
+#### What may be shown to a human
+
+`lib/identity.ts` is the single filter every display site funnels through, because
+the generated addresses are implementation detail and must never reach a screen:
+
+- `isGeneratedEmail()` recognises `@phone.nexuscommerce.dev` and the shop's own
+  `@nexuscommerce.dev` (the QA seed account and any admin-created account on it).
+- `displayEmail()` returns the address, or `null` for a generated one and for a
+  blank. Callers render `NO_EMAIL_LABEL` — *No email linked* — in its place.
+- `accountDetail()` / `accountLabel()` prefer a real address, then the formatted
+  mobile number, then a neutral placeholder, so a phone-registered shopper is
+  identified by their number and never by a synthetic address they never typed.
+
+This applies to the storefront account page, the header menu, the avatar uploader
+and the admin users table alike (`components/admin/users-client.tsx` shows a
+*Mobile sign-in* chip rather than the alias).
 
 #### Mobile-number accounts
 
@@ -441,11 +543,14 @@ What this trades away, stated plainly:
 - **The number is not verified.** No code is sent, so a typo — or somebody else's
   number — creates a working account. The copy under the field says so and asks
   the shopper to double-check it.
-- **Password recovery cannot go by e-mail**, because the alias has no mailbox.
-  `/forgot-password` recognises a number (and the alias domain) *before* sending
-  anything, and answers with a support panel — chat bubbles, `SUPPORT_EMAIL`,
-  `SUPPORT_PHONE` — instead of firing a request that would silently bounce. The
-  check keys off the *shape* of the input, never off whether an account exists, so
+- **The alias has no mailbox, so recovery works differently.** A mobile account
+  has no inbox to mail a reset link to. `/forgot-password` recognises a number
+  (and the alias domain) *before* sending anything, and `/api/auth/recover` looks
+  up whether the account has since **linked a recovery address** — the number's
+  route out of this corner, described under *Recovery e-mail* above. When there is
+  no linked address the answer is a plain sentence saying to ask admin support,
+  rather than a request that would silently bounce. The check keys off the *shape*
+  of the input and the lookup answers identically for an unregistered number, so
   it cannot be used to enumerate accounts.
 - The reserved domain is refused on the *Email* tab, so nobody can conjure an
   alias account by typing one in.
@@ -637,7 +742,7 @@ reach an order that belongs to an account (only the owner or an admin can).
 │  │  ├─ layout.tsx                 # glassmorphism shell: frosted card over an aurora field
 │  │  ├─ login/page.tsx             # Google + e-mail / mobile + password, plus the recovery link
 │  │  ├─ register/page.tsx          # instant sign-in, no e-mail confirmation step
-│  │  ├─ forgot-password/page.tsx    # request a single-use recovery e-mail
+│  │  ├─ forgot-password/page.tsx    # request a single-use recovery e-mail — or a number
 │  │  └─ reset-password/page.tsx     # choose a new password (dead-link state included)
 │  ├─ admin/                        # gated staff panel (admin, or operator)
 │  │  ├─ layout.tsx                 # server-side staff guard + AdminShell
@@ -647,7 +752,10 @@ reach an order that belongs to an account (only the owner or an admin can).
 │  │  ├─ categories/page.tsx        # category CRUD
 │  │  └─ users/page.tsx             # user management: list + add (staff reads; admin writes)
 │  ├─ api/revalidate/route.ts       # staff cache-tag invalidation (admin or operator)
-│  ├─ api/admin/users/route.ts      # create (Auth Admin API) / delete (RPC first) an account
+│  ├─ api/admin/users/route.ts      # create (Auth Admin API) / delete (RPC first) / PATCH sets a password (admin)
+│  ├─ api/account/recovery-email/route.ts  # link a recovery address — password-gated, Admin API
+│  ├─ api/auth/phone-signin/route.ts # mobile sign-in completed server-side, cookies only
+│  ├─ api/auth/recover/route.ts     # a mobile number → its linked recovery address
 │  ├─ api/orders/[id]/notify/route.ts  # best-effort order-confirmation e-mail (owner-only)
 │  ├─ auth/callback/route.ts        # OAuth / e-mail confirmation exchange (code → session)
 │  ├─ robots.ts                     # /robots.txt: blocks /admin + /api, points at the sitemap
@@ -658,12 +766,14 @@ reach an order that belongs to an account (only the owner or an admin can).
 │  ├─ error.tsx · not-found.tsx · globals.css
 ├─ components/
 │  ├─ ui/                           # shadcn-style primitives + UserAvatar + TrxIdChip + skeletons
+│  │                                # + password-input (shared show/hide field)
 │  ├─ auth/                         # login-form, register-form (Email ⇄ Mobile tabs),
 │  │                                # google-button, identifier-tabs, auth-divider,
 │  │                                # forgot-password-form, reset-password-form
 │  ├─ seo/json-ld.tsx               # schema.org <script> emitter (escapes `<`)
 │  ├─ legal/legal-page.tsx          # shared shell + anchorable sections for the policy pages
-│  ├─ account/                      # profile-dashboard, avatar-uploader, edit-profile-dialog
+│  ├─ account/                      # profile-dashboard, avatar-uploader, edit-profile-dialog,
+│  │                                # change-password-card, recovery-email-card
 │  ├─ layout/                       # site-header, site-footer, announcement-bar,
 │  │                                # support-widgets (WhatsApp + Messenger), theme-toggle
 │  ├─ storefront/                   # cart-sheet, product-card, product-detail, checkout-form,
@@ -672,6 +782,7 @@ reach an order that belongs to an account (only the owner or an admin can).
 │  ├─ admin/                        # admin-shell, dashboard-client, orders-client,
 │  │                                # products-client, product-form-dialog,
 │  │                                # users-client, user-role-control, invite-staff-dialog,
+│  │                                # set-password-dialog,
 │  │                                # payment-verify-button, stat-card…
 │  └─ providers/                    # auth-provider, cart-hydrator, theme-provider
 ├─ hooks/use-realtime.ts            # useRealtimeOrders · useRealtimeProducts · useLiveProduct
@@ -688,6 +799,8 @@ reach an order that belongs to an account (only the owner or an admin can).
 │  ├─ seo.ts                        # canonical origin, share card, descriptions, NO_INDEX
 │  ├─ structured-data.ts            # schema.org builders: Organization, WebSite, Product, Breadcrumb
 │  ├─ phone.ts                      # BD mobile normalisation, the phone→e-mail alias, identifier rules
+│  ├─ phone-lookup.ts               # a number → the account → the address Auth holds
+│  ├─ identity.ts                   # what may be shown to a human (generated addresses are not)
 │  ├─ password.ts                   # MIN_PASSWORD_LENGTH + the shared strength meter
 │  ├─ auth-url.ts                   # the one allow-listed /auth/callback URL all auth flows use
 │  ├─ legal.ts                      # policy metadata: last-updated date, the #data-deletion anchor
@@ -696,7 +809,7 @@ reach an order that belongs to an account (only the owner or an admin can).
 ├─ public/og-default.png            # 1200x630 default Open Graph card (committed)
 ├─ scripts/make-og-image.ps1        # re-renders it with GDI+ — no extra dependencies
 ├─ scripts/qa/                      # rls-probe · seo-probe · email-probe · image-probe
-│                                  # auth-probe · phone-probe (+ README)
+│                                  # auth-probe · phone-probe · password-probe (+ README)
 ├─ supabase/migrations/             # 0001_init · 0002_seed · 0003_promote_admin
 │                                  # 0004_fix_orders_profiles_fk · 0005_bkash_payments
 │                                  # 0006_profile_avatars · 0007_require_auth_for_checkout
@@ -811,8 +924,9 @@ reach an order that belongs to an account (only the owner or an admin can).
     *same* number written differently — `+8801712345678` — and confirm you land in
     the **same** account, orders and all. Try `01212345678` and a 10-digit number:
     both are refused, with a sentence saying it is not a BD mobile number. Open
-    `/forgot-password` and enter a number: it must answer with the support panel —
-    no e-mail is sent — rather than a "check your inbox" screen. Finally, type an
+    `/forgot-password` and enter a number: it must answer that no recovery e-mail
+    is linked and point at admin support — not a "check your inbox" screen, and
+    not a request that silently bounces. Finally, type an
     `…@phone.nexuscommerce.dev` address into the *Email* tab and confirm it is
     refused. `node scripts/qa/phone-probe.mjs` covers the same rules as a table.
 
@@ -907,6 +1021,27 @@ reach an order that belongs to an account (only the owner or an admin can).
     `curl -X POST localhost:3000/api/orders/not-a-uuid/notify` answers
     `INVALID_ORDER_ID` (a stranger's order id answers `AUTH_REQUIRED`, the same as
     an unknown one).
+25. **Changing a password**
+    Signed in, `/account` → *Change password*: two passwords that do not match are
+    refused, five characters are refused, and the wrong current password is
+    refused — each with its own sentence and the button back to normal. Do it
+    properly and you are still signed in on the new password. Sign in with Google
+    instead and the card becomes "set a password", with nothing to confirm against.
+26. **Linking a recovery e-mail**
+    Register with a mobile number. `/account` → *Recovery e-mail*: the wrong
+    current password is refused (that is the whole point of the gate), then link a
+    real address you control. It becomes the account's sign-in address — check the
+    header and `/account` still show the *number*, with no `…@phone.…` text
+    anywhere, and `/admin/users` shows the new address with no alias. Sign out and
+    back in with the mobile number: it still works. Then `/forgot-password` with
+    the number now answers *check your inbox*, and the link that arrives really
+    resets the password.
+27. **An administrator sets a password**
+    `/admin/users` → the *Password* action on a row → a new password → the toast
+    says it has to be passed on by hand, because nothing is e-mailed. Sign in as
+    that account to confirm. An operator signing in to the console does **not**
+    see the action. `node scripts/qa/password-probe.mjs` walks sign-in, linking and
+    the guards end to end against a running server.
 
 ---
 
@@ -1066,7 +1201,7 @@ pointing at `localhost:3000`.
 | *Continue with Google* signs in silently, skipping the account chooser | That was the default: Google reuses whatever session the browser holds. The app now sends `prompt=select_account`; if it is ignored, the deployed build predates the fix — redeploy. `node scripts/qa/auth-probe.mjs` proves the parameter reaches `accounts.google.com`. |
 | Signed in inside Messenger / Instagram but *still* signed out afterwards, or *"This browser dropped the part of the sign-in…"* | In-app browsers commonly refuse the cookie that holds the PKCE code verifier, and often fire the callback twice. The callback is now replay-safe (`Cache-Control: no-store`, and a second hit with an already-spent code forwards the session instead of failing) and `/auth/callback` is excluded from the session-refresh middleware so only one writer touches the auth cookies. The remaining case is a genuinely blocked cookie — the message says so and asks the shopper to reopen in Chrome or Safari via the ⋯ menu. |
 | Mobile sign-in says *"that does not look like a Bangladeshi mobile number"* | The number must match `01[3-9]\d{8}` once normalised. `012…` (not a mobile operator) and any 10- or 12-digit number are refused on purpose. `lib/phone.ts` already accepts `+880…`, `880…`, `00880…`, a bare `1…` and spaces/dashes/brackets, and produces one alias per number — `node scripts/qa/phone-probe.mjs` proves it over eight spellings. |
-| A mobile-number account cannot use *Forgot password* | By design, not a bug: the `…@phone.nexuscommerce.dev` alias has no mailbox, so there is no address to mail a link to. `/forgot-password` recognises a number and answers with a support panel rather than firing a request that would bounce. Recovery is a manual step — confirm who you are talking to over the chat, then set a new password from Supabase → **Authentication → Users**. |
+| A mobile-number account cannot use *Forgot password* | The `…@phone.nexuscommerce.dev` alias has no mailbox, so there is no address to mail a link to — until the account **links a recovery e-mail** from `/account` (which replaces the alias as the auth address and leaves the mobile number working). With nothing linked, `/forgot-password` recognises a number and says plainly that no recovery e-mail is linked and to contact admin support. An administrator can then set a password directly from the *Password* action on `/admin/users`, which e-mails nothing and is passed on by hand. |
 | The password-reset e-mail never arrives | It is sent by **Supabase Auth**, not the Resend order mail — check spam, then the SMTP/sender under Supabase → **Authentication → Emails**. An address with no account gets no mail on purpose, and the screen stays deliberately vague either way. |
 | The reset link reports expired, or `/reset-password` shows the dead-link screen | Recovery links are single-use and last an hour. Also allow-list the site: Supabase → **Authentication → URL Configuration** must include both the **Site URL** and `…/auth/callback`, otherwise the callback cannot mint the recovery session. |
 | Choosing a new password fails with *Auth session missing* | `/reset-password` was opened directly instead of through the e-mailed link. Send the shopper to `/forgot-password` for a fresh one — the page says this itself. |
@@ -1155,7 +1290,7 @@ the money, the escaping and the route's guards.
 | --- | --- |
 | **Upgrading Next.js** | `npm audit` flags the pinned `next@14.2.35` with two *critical* advisories plus a dozen others — notably an unauthenticated RCE in the Image Optimization API when AVIF files are used, and one that requires a **Windows**-hosted server (moot on Vercel, live on a Windows VM). The closed image allow-list above removes the practical vector, but the real fix is the upgrade. It is a **major** version jump (React 19, async `cookies()`/`params` in every route), so it deserves its own change with the whole QA suite re-run — not a hardening pass. |
 | Supabase **Redirect URLs** allow-list | The code builds every auth callback from `NEXT_PUBLIC_SITE_URL` (`lib/auth-url.ts`) and the live project already has Google and email enabled (Facebook is off, and a Facebook sign-in can no longer reach `facebook.com` — asserted by `scripts/qa/auth-probe.mjs`). What is left is a dashboard setting with no API surface here: **Authentication → URL Configuration** must list `https://nexus-commerce-shawon.vercel.app/auth/callback` (and, for the deeper targets such as `/checkout` and `/reset-password`, the glob `https://nexus-commerce-shawon.vercel.app/**`) under *Redirect URLs*, with the same origin as *Site URL*. Until then Supabase falls back to *Site URL* and the OAuth / reset links land in the wrong place. |
-| **Real** phone auth (SMS OTP) | Mobile-number sign-in currently maps a number onto an e-mail alias (§2.4F) — no SMS, no cost, but also no verification and no self-service recovery for a mobile-only account. `supabase.auth.signUp({ phone, password })` + `verifyOtp` is the real thing, and `lib/phone.ts` already produces the canonical value it wants. Blocked on the project's plan rather than on this codebase: the live project reports `external.phone = false`, `phone_autoconfirm = false`, `sms_provider = twilio`, and an SMS provider needs a paid tier. |
+| **Real** phone auth (SMS OTP) | Mobile-number sign-in currently maps a number onto an e-mail alias (§2.4F) — no SMS, no cost, and no verification. A shopper who links a recovery e-mail can now reset their own password; without one, an administrator resets it from `/admin/users`. `supabase.auth.signUp({ phone, password })` + `verifyOtp` is the real thing, and `lib/phone.ts` already produces the canonical value it wants. Blocked on the project's plan rather than on this codebase: the live project reports `external.phone = false`, `phone_autoconfirm = false`, `sms_provider = twilio`, and an SMS provider needs a paid tier. |
 | Running `0013_remove_facebook_identity.sql` | It is optional housekeeping — a disabled provider cannot authenticate anything — so it has not been run against the live project. Paste it into the SQL editor when convenient: it drops the leftover `facebook` rows from `auth.identities` and refuses to touch any account whose *only* identity is Facebook. |
 | A real support address in the footer | `support@nexuscommerce.dev` is a placeholder — point it at a mailbox somebody actually reads. |
 | `Content-Security-Policy` | It needs the Supabase realtime origin, the image hosts and Next's inline runtime allow-listed. The headers already in `next.config.mjs` are the safe subset; a wrong CSP would break the shop rather than protect it. |

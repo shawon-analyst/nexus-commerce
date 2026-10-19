@@ -15,6 +15,8 @@ import {
 } from '@/components/ui/dialog';
 import { Input, Textarea } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { NO_EMAIL_LABEL, displayEmail } from '@/lib/identity';
+import { normalizeBdPhone } from '@/lib/phone';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { humanizeError } from '@/lib/utils';
 import type { Profile } from '@/lib/types';
@@ -55,11 +57,23 @@ export function EditProfileDialog({
     setSaving(true);
     try {
       const supabase = getSupabaseBrowserClient();
+
+      /*
+       * Store the mobile number in its canonical `01XXXXXXXXX` form whenever it
+       * parses as one. That is what makes phone sign-in and phone-based password
+       * recovery able to find the account by number (`lib/phone-lookup.ts`) — the
+       * field used to be free text, so `+8801712…` and `01712…` were two
+       * different strings for the same person. Anything that is not a Bangladeshi
+       * mobile number (a landline, a foreign number) is kept as typed.
+       */
+      const trimmedPhone = phone.trim();
+      const canonicalPhone = normalizeBdPhone(trimmedPhone);
+
       const { data, error } = await supabase
         .from('profiles')
         .update({
           full_name: fullName.trim(),
-          phone: phone.trim() || null,
+          phone: canonicalPhone ?? (trimmedPhone || null),
           shipping_address: shippingAddress.trim() || null,
         })
         .eq('id', profile.id)
@@ -114,9 +128,15 @@ export function EditProfileDialog({
 
           <div className="grid gap-1.5">
             <Label htmlFor="profile-email">Email</Label>
-            <Input id="profile-email" value={profile.email} disabled readOnly />
+            <Input
+              id="profile-email"
+              value={displayEmail(profile.email) ?? NO_EMAIL_LABEL}
+              disabled
+              readOnly
+            />
             <p className="text-xs text-muted-foreground">
-              Your sign-in address cannot be changed here.
+              Managed under <strong className="font-medium text-foreground">Recovery email</strong>{' '}
+              on your profile — that is where reset links are sent.
             </p>
           </div>
 

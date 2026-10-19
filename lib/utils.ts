@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { MIN_PASSWORD_LENGTH } from '@/lib/password';
 import type {
   DeliveryArea,
   OrderStatus,
@@ -440,6 +441,15 @@ export function humanizeError(error: unknown): string {
     return 'Staff and operator accounts cannot place orders — switch to a customer account.';
   if (/ROLE_NOT_ALLOWED/i.test(raw))
     return 'Only an administrator can create operator or administrator accounts.';
+  if (/SERVICE_ROLE_REQUIRED/i.test(raw))
+    return 'This action needs SUPABASE_SERVICE_ROLE_KEY to be configured on the server.';
+  if (/EMAIL_TAKEN/i.test(raw)) return 'That address already belongs to another account.';
+  if (/SAME_EMAIL/i.test(raw)) return 'That is already the address on the account.';
+  if (/INVALID_PASSWORD/i.test(raw)) return 'That is not your current password.';
+  if (/OAUTH_ACCOUNT/i.test(raw))
+    return 'This account signs in with Google and has no password to confirm with.';
+  if (/WEAK_PASSWORD/i.test(raw)) return `The password must be at least ${MIN_PASSWORD_LENGTH} characters.`;
+  if (/INVALID_EMAIL/i.test(raw)) return 'Enter a valid e-mail address.';
   if (/NOT_AUTHORIZED/i.test(raw)) return 'You are not authorised to do that.';
   if (/Invalid login credentials/i.test(raw)) return 'Incorrect email or password.';
   if (/duplicate key value/i.test(raw)) return 'That record already exists.';

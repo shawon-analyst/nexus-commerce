@@ -29,8 +29,8 @@ export default function ForgotPasswordPage({
       <header className="mb-6">
         <h1 className="text-2xl font-bold tracking-tight">Forgot your password?</h1>
         <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-          Enter the email you signed up with and we will send a secure verification link to choose a
-          new one.
+          Enter the email you signed up with — or the mobile number you registered with — and we
+          will send a secure verification link to choose a new one.
         </p>
       </header>
 

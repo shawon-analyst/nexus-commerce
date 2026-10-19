@@ -30,6 +30,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/components/providers/auth-provider';
+import { accountDetail, displayEmail } from '@/lib/identity';
 import { cn } from '@/lib/utils';
 import type { Category } from '@/lib/types';
 
@@ -52,6 +53,17 @@ export function SiteHeader({ categories }: { categories: Category[] }) {
   // Which console badge to wear: an operator is staff but is not an
   // administrator, and saying "Admin" for them would be a lie.
   const staffLabel = !isStaff ? null : profile?.role === 'admin' ? 'Admin' : 'Operator';
+
+  /*
+   * The address shown under the account name. `profile.email` is the generated
+   * `…@phone.…` alias for a mobile-number account, which the shopper must never
+   * see, so it goes through the same masking as every other surface and falls
+   * back to the number they actually recognise.
+   */
+  const accountIdentity = accountDetail({
+    email: profile?.email ?? user?.email,
+    phone: profile?.phone,
+  });
 
   React.useEffect(() => {
     setMobileOpen(false);
@@ -141,7 +153,7 @@ export function SiteHeader({ categories }: { categories: Category[] }) {
                     <UserAvatar
                       src={profile?.avatar_url}
                       name={profile?.full_name}
-                      email={profile?.email ?? user.email}
+                      email={displayEmail(profile?.email ?? user?.email) ?? profile?.phone}
                       className="h-10 w-10 text-xs"
                       sizes="40px"
                     />
@@ -150,7 +162,7 @@ export function SiteHeader({ categories }: { categories: Category[] }) {
                         {profile?.full_name ?? 'Account'}
                       </span>
                       <span className="block truncate text-xs text-muted-foreground">
-                        {profile?.email ?? user.email}
+                        {accountIdentity}
                       </span>
                     </span>
                     <UserRound className="h-4 w-4 text-muted-foreground" />
@@ -255,7 +267,7 @@ export function SiteHeader({ categories }: { categories: Category[] }) {
                     <UserAvatar
                       src={profile?.avatar_url}
                       name={profile?.full_name}
-                      email={profile?.email ?? user.email}
+                      email={displayEmail(profile?.email ?? user?.email) ?? profile?.phone}
                       className="h-10 w-10 text-xs"
                       sizes="40px"
                     />
@@ -264,7 +276,7 @@ export function SiteHeader({ categories }: { categories: Category[] }) {
                         {profile?.full_name ?? 'Account'}
                       </span>
                       <span className="block truncate text-xs text-muted-foreground">
-                        {profile?.email ?? user.email}
+                        {accountIdentity}
                       </span>
                     </span>
                     {staffLabel && (

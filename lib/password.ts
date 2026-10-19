@@ -3,11 +3,16 @@
  *
  * `reset-password-form` used to carry its own copy of this; the sign-up form
  * needs the same meter, and two duplicated strength tables drift apart the moment
- * one of them is tuned. Supabase's own floor is six characters — eight is the
- * deliberate product choice.
+ * one of them is tuned.
+ *
+ * Six is Supabase Auth's own floor (`auth.password_min_length`), so it is the
+ * only value every path is guaranteed to accept: sign-up, a reset link, the
+ * profile's change-password form and an administrator setting one directly. The
+ * strength meter still pushes a longer, varied password — the floor is the
+ * minimum, not the recommendation.
  */
 
-export const MIN_PASSWORD_LENGTH = 8;
+export const MIN_PASSWORD_LENGTH = 6;
 
 /**
  * A cheap, honest strength signal: length plus variety, no third-party meter and

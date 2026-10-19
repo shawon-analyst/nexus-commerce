@@ -46,3 +46,31 @@ export function authCallbackUrl(redirectTo = '/'): string {
   if (redirectTo && redirectTo !== '/') url.searchParams.set('redirectTo', redirectTo);
   return url.toString();
 }
+
+/**
+ * The same URL, built where there is no `window` — a Route Handler that emails a
+ * reset link on the shopper's behalf (`/api/auth/recover`).
+ *
+ * It mirrors `authCallbackUrl()` exactly: a configured, real `NEXT_PUBLIC_SITE_URL`
+ * always wins, because that is the value on Supabase's Redirect-URLs allow-list.
+ * Only when it is unset or still `localhost` does the caller's own request origin
+ * stand in — which keeps a local `next start -p 3100` working without hard-coding
+ * a port.
+ */
+export function serverAuthCallbackUrl(requestUrl: string, redirectTo = '/'): string {
+  const configuredToRealOrigin =
+    /^https?:\/\//i.test(SITE_URL) && !/localhost|127\.0\.0\.1/i.test(SITE_URL);
+
+  let origin = SITE_URL;
+  if (!configuredToRealOrigin) {
+    try {
+      origin = new URL(requestUrl).origin;
+    } catch {
+      origin = SITE_URL;
+    }
+  }
+
+  const url = new URL('/auth/callback', origin);
+  if (redirectTo && redirectTo !== '/') url.searchParams.set('redirectTo', redirectTo);
+  return url.toString();
+}

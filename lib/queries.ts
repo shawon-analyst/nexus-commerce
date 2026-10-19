@@ -105,16 +105,31 @@ async function loadCurrentProfile(): Promise<ProfileLookup> {
   if (error) return { status: 'error', message: `profiles lookup failed: ${error.message}` };
   if (data) {
     /*
-     * OAuth sign-ups (Google) carry their picture in the auth metadata. Accounts
-     * that predate the avatar column, or that were created while the trigger did
-     * not copy it, adopt it here on first sight so the header is never a blank
-     * circle. A deliberately uploaded picture is never overwritten.
+     * Two columns are mirrors of the auth record, and both are healed on first
+     * sight rather than by a trigger:
+     *
+     *  - `avatar_url` — OAuth sign-ups (Google) carry their picture in the auth
+     *    metadata. Accounts that predate the avatar column, or that were created
+     *    while the trigger did not copy it, adopt it here so the header is never
+     *    a blank circle. A deliberately uploaded picture is never overwritten.
+     *  - `email` — changing a recovery address rewrites the *auth* e-mail
+     *    (`/api/account/recovery-email`): a phone account's generated alias is
+     *    replaced by the real address. Syncing the mirror here keeps the admin
+     *    users table and the order history honest even when that route never ran,
+     *    e.g. when the address was changed straight from the Supabase dashboard.
      */
+    const patch: { avatar_url?: string; email?: string } = {};
+
     const metadataAvatar = oauthAvatarFor(user.user_metadata);
-    if (!data.avatar_url && metadataAvatar) {
+    if (!data.avatar_url && metadataAvatar) patch.avatar_url = metadataAvatar;
+
+    const authoritativeEmail = (user.email ?? '').trim();
+    if (authoritativeEmail && data.email !== authoritativeEmail) patch.email = authoritativeEmail;
+
+    if (Object.keys(patch).length > 0) {
       const { data: updated } = await supabase
         .from('profiles')
-        .update({ avatar_url: metadataAvatar })
+        .update(patch)
         .eq('id', user.id)
         .select('*')
         .maybeSingle();

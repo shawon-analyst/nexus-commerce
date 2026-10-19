@@ -56,6 +56,7 @@ if (!existsSync(TSC)) {
 
 let phone;
 let password;
+let identity;
 try {
   outDir = mkdtempSync(join(tmpdir(), 'phone-probe-'));
   execFileSync(
@@ -64,6 +65,7 @@ try {
       TSC,
       'lib/phone.ts',
       'lib/password.ts',
+      'lib/identity.ts',
       '--outDir',
       outDir,
       '--module',
@@ -76,6 +78,7 @@ try {
   );
   phone = require(find(outDir, 'phone.js'));
   password = require(find(outDir, 'password.js'));
+  identity = require(find(outDir, 'identity.js'));
 } catch (error) {
   console.log(`SKIP  phone-probe  — could not compile lib/phone.ts (${String(error.message).split('\n')[0]})`);
   process.exit(0);
@@ -211,7 +214,7 @@ check(
 
 /* ------------------------------------------------------------ passwords --- */
 console.log('\n=== the shared password policy ===');
-check('MIN_PASSWORD_LENGTH is 8', password.MIN_PASSWORD_LENGTH === 8);
+check('MIN_PASSWORD_LENGTH is 6', password.MIN_PASSWORD_LENGTH === 6);
 check('a three-character password scores lowest', password.passwordStrength('abc') === 0);
 check(
   'a long mixed password scores highest',
@@ -219,6 +222,64 @@ check(
   String(password.passwordStrength('Correct-Horse9')),
 );
 check('PASSWORD_STRENGTH_META covers scores 0-4', password.PASSWORD_STRENGTH_META.length === 5);
+
+/* ----------------------------------------------------- e-mail masking --- */
+console.log('\n=== what may be shown to a human ===');
+
+for (const generated of [
+  '01712345678@phone.nexuscommerce.dev',
+  '01712345678@PHONE.NexusCommerce.dev',
+  'qa.avatar.1792296407@nexuscommerce.dev',
+]) {
+  check(`"${generated}" is a generated address`, identity.isGeneratedEmail(generated));
+  check(`"${generated}" is never displayed`, identity.displayEmail(generated) === null);
+}
+
+for (const real of ['shopper@example.com', 'qa.real@gmail.com']) {
+  check(`"${real}" is not a generated address`, !identity.isGeneratedEmail(real));
+  check(`"${real}" is displayed unchanged`, identity.displayEmail(real) === real);
+}
+
+check('displayEmail rejects null', identity.displayEmail(null) === null);
+check('displayEmail rejects blank', identity.displayEmail('   ') === null);
+
+check(
+  'the alias is not mistaken for the shop domain',
+  identity.isGeneratedEmail('shopper@phone.nexuscommerce.dev.example.com') === false,
+);
+
+check(
+  'accountDetail prefers a real address',
+  identity.accountDetail({ email: 'real@example.com', phone: '01712345678' }) === 'real@example.com',
+);
+check(
+  'accountDetail falls back to the formatted mobile number',
+  identity.accountDetail({
+    email: '01712345678@phone.nexuscommerce.dev',
+    phone: '01712345678',
+  }) === '01712 345678',
+);
+check(
+  'accountDetail says so when there is nothing',
+  identity.accountDetail({ email: null, phone: null }) === identity.NO_EMAIL_LABEL,
+);
+
+check(
+  'accountLabel prefers the name',
+  identity.accountLabel({ full_name: 'Md Sani', email: null, phone: '01712345678' }) === 'Md Sani',
+);
+check(
+  'accountLabel never falls back to an alias',
+  identity.accountLabel({
+    full_name: '  ',
+    email: '01712345678@phone.nexuscommerce.dev',
+    phone: '01712345678',
+  }) === '01712 345678',
+);
+check(
+  'accountLabel for a nameless, phoneless account is neutral',
+  identity.accountLabel({ email: null, phone: null }) === 'This account',
+);
 
 /* ---------------------------------------------------------------- done --- */
 rmSync(outDir, { recursive: true, force: true });

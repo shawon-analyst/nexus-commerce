@@ -19,6 +19,7 @@ import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/layout/theme-toggle';
 import { useAuth } from '@/components/providers/auth-provider';
+import { accountDetail } from '@/lib/identity';
 import { cn, initials, isStaffRole, userRoleMeta } from '@/lib/utils';
 import type { UserRole } from '@/lib/types';
 
@@ -219,7 +220,7 @@ export function AdminShell({
               <span className="block text-xs font-medium leading-tight">
                 {fullName ?? roleMeta.label}
               </span>
-              <span className="block text-[11px] text-muted-foreground">{email}</span>
+              <span className="block text-[11px] text-muted-foreground">{accountDetail({ email })}</span>
             </span>
             <span
               className={cn(

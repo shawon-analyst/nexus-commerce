@@ -3,11 +3,11 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { AlertCircle, Eye, EyeOff, KeyRound, Loader2, ShieldCheck } from 'lucide-react';
+import { AlertCircle, KeyRound, Loader2, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PasswordInput } from '@/components/ui/password-input';
 import { MIN_PASSWORD_LENGTH, PASSWORD_STRENGTH_META, passwordStrength } from '@/lib/password';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { cn, humanizeError } from '@/lib/utils';
@@ -39,7 +39,6 @@ export function ResetPasswordForm({
   const [phase, setPhase] = React.useState<Phase>(initialSession ? 'form' : 'checking');
   const [password, setPassword] = React.useState('');
   const [confirm, setConfirm] = React.useState('');
-  const [showPassword, setShowPassword] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
 
   React.useEffect(() => {
@@ -147,28 +146,16 @@ export function ResetPasswordForm({
 
       <div className="grid gap-1.5">
         <Label htmlFor="new-password">New password</Label>
-        <div className="relative">
-          <Input
-            id="new-password"
-            type={showPassword ? 'text' : 'password'}
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
-            autoComplete="new-password"
-            minLength={MIN_PASSWORD_LENGTH}
-            className="pr-10"
-            required
-            autoFocus
-          />
-          <button
-            type="button"
-            onClick={() => setShowPassword((value) => !value)}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground transition-colors hover:bg-accent"
-            aria-label={showPassword ? 'Hide password' : 'Show password'}
-          >
-            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-          </button>
-        </div>
+        <PasswordInput
+          id="new-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
+          autoComplete="new-password"
+          minLength={MIN_PASSWORD_LENGTH}
+          required
+          autoFocus
+        />
 
         {password.length > 0 && (
           <div className="mt-1 flex items-center gap-2">
@@ -186,9 +173,8 @@ export function ResetPasswordForm({
 
       <div className="grid gap-1.5">
         <Label htmlFor="confirm-password">Confirm new password</Label>
-        <Input
+        <PasswordInput
           id="confirm-password"
-          type={showPassword ? 'text' : 'password'}
           value={confirm}
           onChange={(event) => setConfirm(event.target.value)}
           placeholder="Retype it"
