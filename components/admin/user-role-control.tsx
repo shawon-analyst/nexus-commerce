@@ -2,10 +2,17 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { Ban, KeyRound, Loader2, Trash2 } from 'lucide-react';
+import { Ban, KeyRound, Loader2, MoreHorizontal, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   Select,
   SelectContent,
@@ -141,7 +148,7 @@ export function UserRoleSelect({
       disabled={disabled || pending}
     >
       <SelectTrigger
-        className="h-9 w-[9.5rem] [&_[data-role-hint]]:hidden"
+        className="h-9 w-[8.5rem] [&_[data-role-hint]]:hidden"
         aria-label={`Role for ${accountLabel(user)}`}
         title={disabled ? disabledHint : userRoleMeta(value).description}
       >
@@ -150,7 +157,15 @@ export function UserRoleSelect({
             <Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving…
           </span>
         ) : (
-          <SelectValue />
+          /*
+           * Radix only mirrors an item's text into SelectValue once the menu has
+           * been opened at least once; until then a bare <SelectValue /> renders
+           * as an empty pill. Rendering the current label ourselves keeps the
+           * Role column readable on first paint.
+           */
+          <SelectValue>
+            <span className="font-medium">{userRoleMeta(value).label}</span>
+          </SelectValue>
         )}
       </SelectTrigger>
       <SelectContent>
@@ -257,56 +272,56 @@ export function UserRowActions({
   }, [onChanged, router, user]);
 
   return (
-    <div className="flex items-center justify-end gap-2">
-      {onRequestSetPassword && (
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-9"
-          disabled={disabled}
-          title={disabled ? disabledHint : 'Set a new password for this account'}
-          onClick={() => onRequestSetPassword(user)}
-        >
-          <KeyRound className="h-4 w-4" />
-          <span className="sr-only sm:not-sr-only">Password</span>
-        </Button>
-      )}
+    <div className="flex justify-end">
+      <DropdownMenu>
+        {/*
+          * A disabled button swallows pointer events, so the hint has to live on
+          * the wrapper — otherwise the one row that most needs explaining (your
+          * own account) is the one with no tooltip.
+          */}
+        <span className="inline-flex" title={disabled ? disabledHint : undefined}>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="h-8 w-8 text-muted-foreground hover:bg-accent hover:text-foreground"
+              disabled={disabled || pending}
+              title={disabled ? undefined : 'Account actions'}
+              aria-label={`Account actions for ${accountLabel(user)}`}
+            >
+              {pending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <MoreHorizontal className="h-4 w-4" />
+              )}
+            </Button>
+          </DropdownMenuTrigger>
+        </span>
 
-      <Button
-        variant="outline"
-        size="sm"
-        className="h-9"
-        disabled={disabled || pending}
-        title={
-          disabled
-            ? disabledHint
-            : user.is_active
-              ? 'Block this account'
-              : 'Unblock this account'
-        }
-        onClick={() => void toggleActive()}
-      >
-        {pending ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : user.is_active ? (
-          <Ban className="h-4 w-4" />
-        ) : (
-          <Ban className="h-4 w-4 rotate-45" />
-        )}
-        {user.is_active ? 'Block' : 'Unblock'}
-      </Button>
+        <DropdownMenuContent align="end" className="w-48">
+          {onRequestSetPassword && (
+            <DropdownMenuItem onSelect={() => onRequestSetPassword(user)}>
+              <KeyRound className="h-4 w-4" />
+              Set password
+            </DropdownMenuItem>
+          )}
 
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-9 text-destructive hover:bg-destructive/10 hover:text-destructive"
-        disabled={disabled}
-        title={disabled ? disabledHint : 'Delete this account for good'}
-        onClick={() => onRequestDelete?.(user)}
-      >
-        <Trash2 className="h-4 w-4" />
-        <span className="sr-only sm:not-sr-only">Delete</span>
-      </Button>
+          <DropdownMenuItem onSelect={() => void toggleActive()}>
+            <Ban className="h-4 w-4" />
+            {user.is_active ? 'Block account' : 'Unblock account'}
+          </DropdownMenuItem>
+
+          <DropdownMenuSeparator />
+
+          <DropdownMenuItem
+            onSelect={() => onRequestDelete?.(user)}
+            className="text-destructive focus:bg-destructive/10 focus:text-destructive [&_svg]:text-destructive"
+          >
+            <Trash2 className="h-4 w-4" />
+            Delete account
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }

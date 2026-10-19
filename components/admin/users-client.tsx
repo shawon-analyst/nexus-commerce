@@ -46,6 +46,7 @@ import {
 } from '@/components/admin/user-role-control';
 import { useRealtimeUsers } from '@/hooks/use-realtime';
 import { NO_EMAIL_LABEL, accountDetail, accountLabel, displayEmail, isGeneratedEmail } from '@/lib/identity';
+import { formatBdPhone } from '@/lib/phone';
 import {
   ASSIGNABLE_ROLES,
   cn,
@@ -385,16 +386,43 @@ export function UsersClient({
         />
       ) : (
         <Card className="overflow-hidden">
-          <Table>
+          {/*
+            * `table-fixed` plus explicit column widths is what keeps the header
+            * and the body aligned no matter how long a name, e-mail or address is:
+            * cells truncate instead of pushing their neighbours. On phones the
+            * role and status cells fold under the name, so only the actions
+            * remain beside it; from `sm` up the min-widths make the table scroll
+            * instead of squeezing the columns (the <Table> wrapper already
+            * scrolls).
+            */}
+          <Table className="min-w-[320px] table-fixed sm:min-w-[640px] md:min-w-[760px] lg:min-w-[960px]">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead>Name</TableHead>
-                <TableHead className="hidden md:table-cell">E-mail</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead className="hidden lg:table-cell">Orders</TableHead>
-                <TableHead className="hidden lg:table-cell">Created</TableHead>
-                <TableHead className="hidden sm:table-cell">Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead className="w-auto whitespace-nowrap">Name</TableHead>
+                <TableHead className="hidden w-[18%] whitespace-nowrap md:table-cell">
+                  E-mail
+                </TableHead>
+                <TableHead className="hidden w-[10.5rem] whitespace-nowrap sm:table-cell">
+                  Role
+                </TableHead>
+                <TableHead className="hidden w-[7rem] whitespace-nowrap lg:table-cell">
+                  Orders
+                </TableHead>
+                <TableHead className="hidden w-[8rem] whitespace-nowrap lg:table-cell">
+                  Created
+                </TableHead>
+                <TableHead className="hidden w-[6rem] whitespace-nowrap sm:table-cell">
+                  Status
+                </TableHead>
+                {/*
+                  * An icon-only column: the word "ACTIONS" is wider than the
+                  * 64px cell once cell padding is taken off, and would spill
+                  * into a horizontal scrollbar at every width. Screen readers
+                  * still get the label.
+                  */}
+                <TableHead className="w-[4rem] text-right">
+                  <span className="sr-only">Actions</span>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -414,11 +442,16 @@ export function UsersClient({
                  */
                 const shownEmail = displayEmail(user.email);
                 const identityLine = accountDetail(user);
+                const name = user.full_name?.trim() ?? '';
 
                 return (
-                  <TableRow key={user.id} className={cn(!user.is_active && 'bg-rose-50/40 dark:bg-rose-500/5')}>
-                    <TableCell className="align-top">
-                      <div className="flex items-start gap-3">
+                  <TableRow
+                    key={user.id}
+                    className={cn('align-middle', !user.is_active && 'bg-rose-50/40 dark:bg-rose-500/5')}
+                  >
+                    {/* ------------------------------------------------ name --- */}
+                    <TableCell className="align-middle">
+                      <div className="flex items-center gap-3">
                         <UserAvatar
                           src={user.avatar_url}
                           name={user.full_name}
@@ -426,39 +459,77 @@ export function UsersClient({
                           className="h-9 w-9 shrink-0"
                         />
                         <div className="min-w-0">
-                          <p className="truncate font-medium">
-                            {user.full_name || <span className="text-muted-foreground">No name</span>}
+                          <div className="flex min-w-0 items-center gap-2">
+                            <p
+                              className="max-w-[160px] truncate font-medium leading-5"
+                              title={name || undefined}
+                            >
+                              {name || (
+                                <span className="text-muted-foreground">No name</span>
+                              )}
+                            </p>
                             {isSelf(user) && (
-                              <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                              <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase leading-4 tracking-wide text-primary">
                                 You
                               </span>
                             )}
-                          </p>
+                          </div>
                           {/* the e-mail column is hidden on phones, so repeat it here */}
-                          <p className="truncate text-xs text-muted-foreground md:hidden">
+                          <p className="truncate text-xs leading-4 text-muted-foreground md:hidden">
                             {identityLine}
                           </p>
+                          {/*
+                            * On phones the Role and Status columns are hidden;
+                            * their content moves under the name so the table
+                            * only scrolls for the actions on truly tiny screens.
+                            */}
+                          <div className="mt-1.5 flex flex-wrap items-center gap-2 sm:hidden">
+                            <UserStatusBadge isActive={user.is_active} />
+                            {isAdmin ? (
+                              <UserRoleSelect
+                                user={user}
+                                disabled={locked}
+                                disabledHint={hint}
+                                onChanged={(updated) => upsert(updated)}
+                              />
+                            ) : (
+                              <UserRoleBadge role={user.role} />
+                            )}
+                          </div>
                         </div>
                       </div>
                     </TableCell>
 
-                    <TableCell className="hidden align-top md:table-cell">
-                      {shownEmail ? (
-                        <span className="text-sm">{shownEmail}</span>
-                      ) : (
-                        <span className="text-sm italic text-muted-foreground">
-                          {NO_EMAIL_LABEL}
-                        </span>
-                      )}
-                      {user.phone && <p className="text-xs text-muted-foreground">{user.phone}</p>}
-                      {isGeneratedEmail(user.email) && (
-                        <span className="mt-1 inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                          Mobile sign-in
-                        </span>
-                      )}
+                    {/* ---------------------------------------------- e-mail --- */}
+                    <TableCell className="hidden align-middle md:table-cell">
+                      <div className="min-w-0">
+                        {shownEmail ? (
+                          <p
+                            className="truncate text-sm font-medium leading-5"
+                            title={shownEmail}
+                          >
+                            {shownEmail}
+                          </p>
+                        ) : (
+                          <p className="text-sm font-medium italic leading-5 text-muted-foreground">
+                            {NO_EMAIL_LABEL}
+                          </p>
+                        )}
+                        {user.phone && (
+                          <p className="truncate text-xs leading-4 text-muted-foreground">
+                            {formatBdPhone(user.phone)}
+                          </p>
+                        )}
+                        {isGeneratedEmail(user.email) && (
+                          <span className="mt-1 inline-flex rounded-full border px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-4 tracking-wide text-muted-foreground">
+                            Mobile sign-in
+                          </span>
+                        )}
+                      </div>
                     </TableCell>
 
-                    <TableCell className="align-top">
+                    {/* ------------------------------------------------ role --- */}
+                    <TableCell className="hidden align-middle sm:table-cell">
                       {isAdmin ? (
                         <UserRoleSelect
                           user={user}
@@ -478,34 +549,44 @@ export function UsersClient({
                       )}
                     </TableCell>
 
-                    <TableCell className="hidden align-top lg:table-cell">
+                    {/* ---------------------------------------------- orders --- */}
+                    <TableCell className="hidden align-middle lg:table-cell">
                       {orders > 0 ? (
-                        <>
-                          <p className="font-medium tabular-nums">
+                        <div className="space-y-0.5">
+                          <p
+                            className="whitespace-nowrap text-sm font-medium leading-5 tabular-nums"
+                            title={
+                              user.last_order_at
+                                ? `Last order ${timeAgo(user.last_order_at)}`
+                                : undefined
+                            }
+                          >
                             {orders} {orders === 1 ? 'order' : 'orders'}
                           </p>
-                          <p className="text-xs text-muted-foreground">{formatCurrency(spent)}</p>
-                          {user.last_order_at && (
-                            <p className="text-xs text-muted-foreground">
-                              last {timeAgo(user.last_order_at)}
-                            </p>
-                          )}
-                        </>
+                          <p className="whitespace-nowrap text-xs leading-4 text-muted-foreground">
+                            {formatCurrency(spent)}
+                          </p>
+                        </div>
                       ) : (
                         <span className="text-sm text-muted-foreground">—</span>
                       )}
                     </TableCell>
 
-                    <TableCell className="hidden align-top text-sm lg:table-cell">
-                      <p>{formatDate(user.created_at)}</p>
-                      <p className="text-xs text-muted-foreground">{timeAgo(user.created_at)}</p>
+                    {/* --------------------------------------------- created --- */}
+                    <TableCell className="hidden align-middle lg:table-cell">
+                      <p className="text-sm leading-5">{formatDate(user.created_at)}</p>
+                      <p className="text-xs leading-4 text-muted-foreground">
+                        {timeAgo(user.created_at)}
+                      </p>
                     </TableCell>
 
-                    <TableCell className="hidden align-top sm:table-cell">
+                    {/* ---------------------------------------------- status --- */}
+                    <TableCell className="hidden align-middle sm:table-cell">
                       <UserStatusBadge isActive={user.is_active} />
                     </TableCell>
 
-                    <TableCell className="align-top">
+                    {/* --------------------------------------------- actions --- */}
+                    <TableCell className="align-middle">
                       {isAdmin ? (
                         <UserRowActions
                           user={user}
@@ -517,16 +598,13 @@ export function UsersClient({
                         />
                       ) : (
                         <p
-                          className="flex items-center justify-end gap-1.5 text-xs text-muted-foreground"
+                          className="flex items-center justify-end text-muted-foreground"
                           title="Only an administrator can block, unblock or delete an account."
                         >
-                          <Lock className="h-3.5 w-3.5" /> View only
+                          <Lock className="h-3.5 w-3.5 shrink-0" />
+                          <span className="sr-only">View only</span>
                         </p>
                       )}
-                      {/* phone layout: the status badge is hidden above, so show it here */}
-                      <div className="mt-2 sm:hidden">
-                        <UserStatusBadge isActive={user.is_active} />
-                      </div>
                     </TableCell>
                   </TableRow>
                 );
