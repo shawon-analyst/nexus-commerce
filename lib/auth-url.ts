@@ -3,7 +3,7 @@ import { SITE_URL } from '@/lib/seo';
 /**
  * The absolute `/auth/callback` URL Supabase should send the browser back to.
  *
- * Every auth surface funnels through `/auth/callback` — Google/Facebook OAuth,
+ * Every auth surface funnels through `/auth/callback` — Google sign-in,
  * the sign-up confirmation link and the password-reset link — so they all have
  * to agree on one URL, and that URL has to be present in Supabase's
  * **Authentication → URL Configuration → Redirect URLs** allow-list. Supabase

@@ -55,22 +55,21 @@ function hasAuthCookie() {
 }
 
 /**
- * The picture an OAuth provider attached to the auth account.
- *   - Google:   `avatar_url` (mirrored to `picture`) as a plain string
- *   - Facebook: `picture` as a nested object — `{ data: { url } }`
- *   - generic:  `image` / `avatar`
- * Anything that is not an http(s) URL is dropped, and non-string JSON shapes are
- * ignored entirely (a naive `picture` read would hand back an object's text).
- * Mirrors `public.oauth_avatar_url()` in the SQL migrations.
+ * The picture the sign-in provider attached to the auth account: `avatar_url`
+ * (what Google sends, mirrored to `picture`) or the generic `image` / `avatar`
+ * keys. Anything that is not an http(s) URL is dropped.
+ *
+ * `public.oauth_avatar_url()` in the SQL migrations still understands a nested
+ * `picture` object for historical rows; that branch only ever existed for
+ * Facebook sign-in, which this project no longer offers, so nothing here
+ * reproduces it.
  */
 function oauthAvatarFor(metadata: Record<string, unknown> | null | undefined): string | null {
   if (!metadata) return null;
 
-  const picture = metadata.picture as { data?: { url?: unknown } } | string | undefined;
   const candidates: unknown[] = [
     metadata.avatar_url,
-    typeof picture === 'object' && picture !== null ? picture.data?.url : undefined,
-    typeof picture === 'string' ? picture : undefined,
+    metadata.picture,
     metadata.image,
     metadata.avatar,
   ];

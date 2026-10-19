@@ -82,10 +82,18 @@ export default function PrivacyPolicyPage() {
         <p>We only collect what an order, a delivery or a support conversation actually needs.</p>
         <LegalList>
           <li>
-            <strong className="text-foreground">Account details</strong> — your name, email address
-            and (optionally) your phone number. If you sign in with Google or Facebook we receive
-            your name, email address and profile picture from that provider. We never receive your
-            Google or Facebook password.
+            <strong className="text-foreground">Account details</strong> — your name, and either an
+            email address or a mobile number, plus (optionally) a second phone number for delivery.
+            You create the account with a password, or you continue with Google — in which case we
+            receive your name, email address and profile picture from Google. We never receive your
+            Google password.
+          </li>
+          <li>
+            <strong className="text-foreground">Mobile-number accounts</strong> — if you register
+            with a mobile number, that number becomes your sign-in name and is stored on your
+            profile. We do <strong className="text-foreground">not</strong> send it an SMS
+            verification code, so your password is what protects the account. Please check the number
+            carefully when you register.
           </li>
           <li>
             <strong className="text-foreground">Order and delivery details</strong> — the items you
@@ -113,14 +121,17 @@ export default function PrivacyPolicyPage() {
         </LegalList>
         <p className="rounded-lg border border-dashed p-3">
           <strong className="text-foreground">We never collect or store</strong> card numbers, card
-          security codes, bKash PINs, one-time passwords (OTPs) or your Google/Facebook password.
+          security codes, bKash PINs, one-time passwords (OTPs) or your Google password.
           Never send them to us — no member of staff will ever ask for them.
         </p>
       </LegalSection>
 
       <LegalSection id="how-we-use-it" title="3. Why we use it">
         <LegalList>
-          <li>To create and secure your account, and to keep you signed in.</li>
+          <li>
+            To create and secure your account and to keep you signed in, whether you sign in by
+            email address, mobile number or Google.
+          </li>
           <li>To accept, pack, invoice and deliver your orders, and to let you track them.</li>
           <li>To verify a bKash payment against the TrxID you provide.</li>
           <li>To contact you about an order — a delivery call, a stock problem or an address query.</li>
@@ -174,8 +185,8 @@ export default function PrivacyPolicyPage() {
             the site and therefore processes request logs.
           </li>
           <li>
-            <strong className="text-foreground">Google and Facebook</strong> — only if you choose to
-            sign in with them. Their handling of your data is governed by their own privacy policies.
+            <strong className="text-foreground">Google</strong> — only if you choose to sign in with
+            Google. Their handling of your data is governed by Google&rsquo;s own privacy policy.
           </li>
           <li>
             <strong className="text-foreground">bKash</strong> — the payment reference on your order,
@@ -247,9 +258,9 @@ export default function PrivacyPolicyPage() {
             linked to it, as described in the next section.
           </li>
           <li>
-            <strong className="text-foreground">Withdraw a sign-in provider</strong> — remove our app
-            from your Google or Facebook account settings at any time; you can keep signing in with
-            your email address.
+            <strong className="text-foreground">Withdraw Google</strong> — remove our app from your
+            Google account settings at any time; you can keep signing in with your email address or
+            mobile number and the password you set.
           </li>
           <li>
             <strong className="text-foreground">Object or restrict</strong> — contact us and we will
@@ -316,8 +327,8 @@ export default function PrivacyPolicyPage() {
           <li>Your profile row: name, phone number, delivery address and profile photo.</li>
           <li>Any uploaded profile picture file stored in our storage bucket.</li>
           <li>
-            The identity link to Google or Facebook, so our app no longer appears as a connected app
-            on that account.
+            The identity link to Google, so our app no longer appears as a connected app on your
+            Google account.
           </li>
         </LegalList>
 
@@ -329,10 +340,10 @@ export default function PrivacyPolicyPage() {
         </p>
 
         <p className="rounded-lg border border-dashed p-3">
-          Deleting your account is permanent and cannot be undone. If you signed in with Google or
-          Facebook you may also want to revoke our app&rsquo;s access from that provider&rsquo;s
-          security settings — doing that alone does not remove the account we already created, so
-          please use one of the options above as well.
+          Deleting your account is permanent and cannot be undone. If you signed in with Google you
+          may also want to revoke our app&rsquo;s access from your Google security settings — doing
+          that alone does not remove the account we already created, so please use one of the options
+          above as well.
         </p>
       </LegalSection>
 

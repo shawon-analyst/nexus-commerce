@@ -22,7 +22,7 @@ The whole point of this codebase is **zero daily hassle for the owner**:
 | An order total must be what the customer pays | `place_order()` charges the goods **plus delivery by area** (৳60 inside / ৳120 outside Dhaka) and stores the fee, so `total_amount`, revenue and *Lifetime spend* reconcile with the courier's cash |
 | Delivery must be priced by destination | Checkout asks **Inside Dhaka (৳60)** or **Outside Dhaka (৳120)** — Inside by default — and the cart, order summary, order card and invoice all recalculate from that one choice |
 | Staff must land in the console, not the shop | After sign-in an `admin` / `operator` is sent to `/admin`, and any staff member who reaches `/` is redirected back — the rest of the catalogue stays browsable |
-| Signing up should not mean filling a form | Google / Facebook one-tap sign-in; the provider's **name and picture** are written straight onto the profile |
+| Signing up should not mean filling a form | Google one-tap sign-in, or a **mobile number + password** with no SMS round-trip and no cost; a provider's **name and picture** are written straight onto the profile |
 | An order must belong to an account | `/checkout` is gated three times — middleware redirect, page gate, and `place_order()` raises `AUTH_REQUIRED`. `EXECUTE` is revoked from `anon` |
 | Staff should not all be superusers | Three roles: an **operator** runs orders, products and stock and adds customer accounts but can never change a role; only an **admin** touches roles, blocking and deletion - enforced in SQL, not in the UI |
 | A returning customer must not lose their history | Blocking is reversible (`is_active`), deleting detaches the orders (`user_id = null`) instead of erasing revenue, and the last admin can never be removed |
@@ -94,6 +94,12 @@ admin dashboard if the schema is missing.
      Dhaka**, **৳120 Outside Dhaka**, default Inside. Adds `orders.delivery_area`,
      teaches the tamper guard about it, and teaches `place_order()` to charge by
      area instead of the old ৳80 / free-over-৳1,000 rule.
+   - [`supabase/migrations/0013_remove_facebook_identity.sql`](supabase/migrations/0013_remove_facebook_identity.sql)
+     — housekeeping for the removal of Facebook sign-in: drops the now-unusable
+     `facebook` rows from `auth.identities`. It refuses to touch any account whose
+     *only* identity is Facebook, so it can never lock anybody out, and it is a
+     no-op if you never offered Facebook login. A disabled provider cannot
+     authenticate anything, so this is tidy-up rather than a fix.
 
    Every statement in these files is idempotent, so re-running them is harmless.
    (`0007`–`0012` are already folded into `0001_init.sql`, so a fresh install needs
@@ -106,13 +112,18 @@ admin dashboard if the schema is missing.
    > Running `0009` first fails with
    > `invalid input value for enum user_role: "operator"`.
 
-> **Social login is one switch away.** Google / Facebook buttons are rendered on
-> `/login` and `/register`, but Supabase must be told about the providers:
-> **Authentication → Providers → Google / Facebook** → paste the client ID and
-> secret from the Google Cloud / Meta developer console, then add
+> **Google sign-in is one switch away.** The *Continue with Google* button is
+> rendered on `/login` and `/register`, but Supabase must be told about the
+> provider: **Authentication → Providers → Google** → paste the client ID and
+> secret from the Google Cloud console, then add
 > `https://<your-supabase-ref>.supabase.co/auth/v1/callback` to the provider's
 > authorised redirect list. Nothing else is needed — the avatar and display name
 > are copied onto the profile automatically (see §2.4).
+>
+> Email + password and mobile-number sign-in need **no** console setup at all.
+> Facebook sign-in was removed from this project; its provider is switched off in
+> Supabase, and `supabase/migrations/0013_remove_facebook_identity.sql` cleans up
+> any leftover `auth.identities` rows (see §2.4E).
 
 > **Admin panel shows "No orders yet" although orders exist?**
 > Your database was created by an older revision of the migration, so
@@ -283,25 +294,30 @@ still fails. Accounts created before `0005` can be backfilled with:
 update auth.users set email_confirmed_at = now() where email_confirmed_at is null;
 ```
 
-**E. Social sign-in & avatars** — Google and Facebook hand back a *name* and a
-*picture*. `handle_new_user()` copies both onto the profile row, through
+**E. Sign-in providers & avatars** — Google hands back a *name* and a *picture*.
+`handle_new_user()` copies both onto the profile row, through
 `oauth_avatar_url()`:
 
 ```sql
 select coalesce(
   case when jsonb_typeof(meta -> 'avatar_url') = 'string' then meta ->> 'avatar_url' end,
   case when jsonb_typeof(meta -> 'picture' -> 'data' -> 'url') = 'string'
-       then meta -> 'picture' -> 'data' ->> 'url' end,   -- Facebook: {"data":{"url":…}}
+       then meta -> 'picture' -> 'data' ->> 'url' end,   -- legacy Facebook shape
   case when jsonb_typeof(meta -> 'picture') = 'string' then meta ->> 'picture' end
 ) ...
 where candidate like 'http%';                            -- junk is rejected outright
 ```
 
-The type checks matter: `->> 'picture'` on a *Facebook object* returns its JSON
+The type checks matter: `->> 'picture'` on a structured value returns its JSON
 text, so a naive coalesce would store `{"is_silhouette":true}` as the avatar URL.
-`lib/queries.ts` carries the same logic (`oauthAvatarFor`) for accounts that
-predate the trigger — `loadCurrentProfile()` adopts the picture the first time
-the user is seen, and never overwrites one they uploaded themselves.
+The nested `data.url` branch is kept deliberately: rows written while Facebook
+sign-in existed may still carry that shape, it is unfalsifiable once written, and
+rewriting an applied migration would desynchronise it from the database that
+already ran it. `lib/queries.ts` carries the same logic (`oauthAvatarFor`) for
+accounts that predate the trigger — `loadCurrentProfile()` adopts the picture the
+first time the user is seen, and never overwrites one they uploaded themselves.
+Its own nested-`picture` branch is gone, so nothing in the app *reproduces* the
+shape; it only tolerates it.
 
 The **callback** (`app/auth/callback/route.ts`) is the only landing strip for
 both flows. It exchanges the PKCE `code` for a session cookie and forwards the
@@ -327,10 +343,10 @@ writer touches the auth cookies on that request.
 Social sign-in itself is deliberately a **full-page redirect, never a popup**:
 in-app browsers refuse `window.open` but follow a top-level navigation. Google
 requests `prompt=select_account` so the account chooser always appears instead of
-silently reusing the browser's existing session, and Facebook is asked only for
-`public_profile` — GoTrue prepends `email` itself, so requesting it too produced
-the duplicated scope set `email email public_profile`. Both are pinned by
-`scripts/qa/auth-probe.mjs`.
+silently reusing the browser's existing session. `scripts/qa/auth-probe.mjs`
+pins that parameter — and asserts the two halves of the Facebook removal that a
+deleted button does not cover: the provider reads `false` in the project's
+`/auth/v1/settings`, and a Facebook sign-in can no longer reach `facebook.com`.
 
 `lib/auth-url.ts` is the single place that builds the return URL, and it leaves
 the query string off for the default landing: the value handed to Supabase is
@@ -344,16 +360,19 @@ is absent, so both shapes land correctly.
 #### Legal pages
 
 `/privacy` and `/terms` are plain, server-rendered documents inside the shop
-route group, so they inherit the real header and footer. They exist because an
-OAuth provider — Meta in particular — will not approve an app without a publicly
-reachable privacy policy and a documented way for a user to delete their data:
+route group, so they inherit the real header and footer. A storefront that takes
+money and personal data needs both, and a sign-in provider will not approve an app
+without a publicly reachable privacy policy and a documented way for a user to
+delete their data:
 
-- **`/privacy`** covers what is collected, why, who it is shared with, retention,
+- **`/privacy`** covers what is collected (including the mobile-number alias, and
+  the fact that it is **not** SMS-verified), why, who it is shared with, retention,
   security and the shopper's rights, and carries the deletion route at
-  `/privacy#data-deletion` — the anchor to put in Meta's *Data Deletion
-  Instructions URL* field. It is also linked prominently from the top of the page,
-  so a shopper does not have to hunt for it. Every section is a real anchor with
-  `scroll-mt-32`, so a deep link is not left hidden behind the sticky header.
+  `/privacy#data-deletion` — one shareable URL for "please delete my account",
+  ready to paste into any provider's *Data Deletion Instructions URL* field. It is
+  also linked prominently from the top of the page, so a shopper does not have to
+  hunt for it. Every section is a real anchor with `scroll-mt-32`, so a deep link
+  is not left hidden behind the sticky header.
 - **`/terms`** covers eligibility, accounts (including the rule that staff and
   operator accounts cannot order), BDT pricing, cash-on-delivery and bKash
   payment, the ৳60/৳120 delivery charges, cancellation and the 30-day returns
@@ -368,7 +387,7 @@ reachable privacy policy and a documented way for a user to delete their data:
 Uploads go to the **public-read `avatars` bucket**, where the write policies
 confine every file to `avatars/<uid>/…` (`storage.foldername(name)[1] =
 auth.uid()`, 2 MB, image MIME types only). Replacing a picture deletes the
-previous *uploaded* file — an external Google/Facebook URL is never deleted.
+previous *uploaded* file — an external Google URL is never deleted.
 
 #### Password recovery
 
@@ -387,6 +406,55 @@ the implicit (`#access_token=…`) flow. The new password goes nowhere but
 written to a log, a toast, or an analytics call. The confirmation screen is
 deliberately vague ("if that address has an account…") so it can never be used to
 probe which e-mails are registered.
+
+#### Mobile-number accounts
+
+The sign-in card has two tabs. *Email* is an ordinary e-mail + password account.
+*Mobile* takes a Bangladeshi number and a password — and, deliberately, sends
+**no SMS**.
+
+Supabase's own phone auth needs an SMS provider (Twilio) on a paid plan, and the
+live project has `external.phone = false`. Instead the number is normalised to one
+canonical form and **mapped onto the e-mail identity Supabase Auth already
+stores** (`lib/phone.ts`):
+
+| Typed | Canonical | The address Auth sees |
+| --- | --- | --- |
+| `01712 345678` | `01712345678` | `01712345678@phone.nexuscommerce.dev` |
+| `+8801712345678` | `01712345678` | `01712345678@phone.nexuscommerce.dev` |
+| `1712345678` | `01712345678` | `01712345678@phone.nexuscommerce.dev` |
+| `008801712345678` | `01712345678` | `01712345678@phone.nexuscommerce.dev` |
+
+`normalizeBdPhone()` strips `00` / `880` / `+880`, restores a missing leading `0`,
+then validates `/^01[3-9]\d{8}$/` — so `012…` (not a mobile operator) and a 10- or
+12-digit number are refused, with a sentence explaining why rather than a generic
+error. The canonical number also lands in `profiles.phone`, which is what
+pre-fills checkout.
+
+The whole feature rests on one property: **every spelling of one number must
+collapse to one alias**. Miss it and a shopper who types `+880…` the second time
+gets a second, empty account instead of their orders. `scripts/qa/phone-probe.mjs`
+asserts it directly, over eight spellings of the same number.
+
+What this trades away, stated plainly:
+
+- **The number is not verified.** No code is sent, so a typo — or somebody else's
+  number — creates a working account. The copy under the field says so and asks
+  the shopper to double-check it.
+- **Password recovery cannot go by e-mail**, because the alias has no mailbox.
+  `/forgot-password` recognises a number (and the alias domain) *before* sending
+  anything, and answers with a support panel — chat bubbles, `SUPPORT_EMAIL`,
+  `SUPPORT_PHONE` — instead of firing a request that would silently bounce. The
+  check keys off the *shape* of the input, never off whether an account exists, so
+  it cannot be used to enumerate accounts.
+- The reserved domain is refused on the *Email* tab, so nobody can conjure an
+  alias account by typing one in.
+
+`resolveSignInIdentifier()` is the single entry point both forms call; it returns
+either the address Auth should see or the sentence to show the shopper, so the
+login tab and the register tab cannot drift apart. On `/reset-password` the alias
+is translated back into the formatted number (`01712 345678`) before it is
+displayed, so a shopper never sees a synthetic address they never typed.
 
 ### RPC endpoints
 
@@ -566,8 +634,8 @@ reach an order that belongs to an account (only the owner or an admin can).
 │  │  ├─ terms/page.tsx             # Terms of Service
 │  │  └─ not-found.tsx
 │  ├─ (auth)/
-│  │  ├─ layout.tsx                 # split-screen auth shell
-│  │  ├─ login/page.tsx             # Google / Facebook + e-mail, plus the recovery link
+│  │  ├─ layout.tsx                 # glassmorphism shell: frosted card over an aurora field
+│  │  ├─ login/page.tsx             # Google + e-mail / mobile + password, plus the recovery link
 │  │  ├─ register/page.tsx          # instant sign-in, no e-mail confirmation step
 │  │  ├─ forgot-password/page.tsx    # request a single-use recovery e-mail
 │  │  └─ reset-password/page.tsx     # choose a new password (dead-link state included)
@@ -590,7 +658,8 @@ reach an order that belongs to an account (only the owner or an admin can).
 │  ├─ error.tsx · not-found.tsx · globals.css
 ├─ components/
 │  ├─ ui/                           # shadcn-style primitives + UserAvatar + TrxIdChip + skeletons
-│  ├─ auth/                         # login-form, register-form, social-auth-buttons,
+│  ├─ auth/                         # login-form, register-form (Email ⇄ Mobile tabs),
+│  │                                # google-button, identifier-tabs, auth-divider,
 │  │                                # forgot-password-form, reset-password-form
 │  ├─ seo/json-ld.tsx               # schema.org <script> emitter (escapes `<`)
 │  ├─ legal/legal-page.tsx          # shared shell + anchorable sections for the policy pages
@@ -618,6 +687,8 @@ reach an order that belongs to an account (only the owner or an admin can).
 │  ├─ category-icons.ts             # slug/name → lucide icon for the category pills
 │  ├─ seo.ts                        # canonical origin, share card, descriptions, NO_INDEX
 │  ├─ structured-data.ts            # schema.org builders: Organization, WebSite, Product, Breadcrumb
+│  ├─ phone.ts                      # BD mobile normalisation, the phone→e-mail alias, identifier rules
+│  ├─ password.ts                   # MIN_PASSWORD_LENGTH + the shared strength meter
 │  ├─ auth-url.ts                   # the one allow-listed /auth/callback URL all auth flows use
 │  ├─ legal.ts                      # policy metadata: last-updated date, the #data-deletion anchor
 │  └─ email/{resend,order-confirmation}.ts  # fail-soft transport + invoice template
@@ -625,13 +696,13 @@ reach an order that belongs to an account (only the owner or an admin can).
 ├─ public/og-default.png            # 1200x630 default Open Graph card (committed)
 ├─ scripts/make-og-image.ps1        # re-renders it with GDI+ — no extra dependencies
 ├─ scripts/qa/                      # rls-probe · seo-probe · email-probe · image-probe
-│                                  # auth-probe (+ README)
+│                                  # auth-probe · phone-probe (+ README)
 ├─ supabase/migrations/             # 0001_init · 0002_seed · 0003_promote_admin
 │                                  # 0004_fix_orders_profiles_fk · 0005_bkash_payments
 │                                  # 0006_profile_avatars · 0007_require_auth_for_checkout
 │                                  # 0008_staff_roles · 0009_user_management
 │                                  # 0010_operator_scope · 0011_order_totals
-│                                  # 0012_delivery_area
+│                                  # 0012_delivery_area · 0013_remove_facebook_identity
 └─ middleware.ts                    # session refresh + account-state + staff `/`→`/admin`,
                                     # /admin, /account, /checkout gates
 ```
@@ -723,15 +794,27 @@ reach an order that belongs to an account (only the owner or an admin can).
     The browser tab shows the gradient shopping-bag mark (not the default globe) on
     `/`, `/products`, `/admin` and `/login`, in both themes. No `404 /favicon.ico`
     in the network panel.
-14. **Social login + avatar sync**
+14. **Google sign-in + avatar sync**
     With the Google provider enabled, `/login` → *Continue with Google* → the Google
     **account chooser always appears** (the app sends `prompt=select_account`, so it
     cannot silently reuse a session the browser already holds) → after the redirect
     the header shows the Google picture and name, and `/account` displays the same
-    picture with the name pre-filled. Repeat with Facebook, including from the
-    **Facebook app or Facebook Lite** in-app browser. Then upload a custom picture
-    on `/account` — the header updates immediately and the uploaded file (not the
-    Google one) is what the next visit shows.
+    picture with the name pre-filled. Open the same link from inside a messaging
+    app's in-app browser (Messenger, Instagram) to exercise the replay-safe
+    callback. Then upload a custom picture on `/account` — the header updates
+    immediately and the uploaded file (not the Google one) is what the next visit
+    shows.
+15. **Mobile-number sign-in**
+    `/register` → the **Mobile** tab → `01712 345678`, a name and a password →
+    *Create account*. The header signs you in at once and `/account` shows the
+    number as the sign-in name. Sign out, then sign back in on `/login` with the
+    *same* number written differently — `+8801712345678` — and confirm you land in
+    the **same** account, orders and all. Try `01212345678` and a 10-digit number:
+    both are refused, with a sentence saying it is not a BD mobile number. Open
+    `/forgot-password` and enter a number: it must answer with the support panel —
+    no e-mail is sent — rather than a "check your inbox" screen. Finally, type an
+    `…@phone.nexuscommerce.dev` address into the *Email* tab and confirm it is
+    refused. `node scripts/qa/phone-probe.mjs` covers the same rules as a table.
 
     The profile picture is deliberately boring to click. Its box is a fixed 36px in
     the header and 96px on `/account`, `flex-shrink: 0`, `overflow: hidden`, and the
@@ -740,7 +823,7 @@ reach an order that belongs to an account (only the owner or an admin can).
     and double-clicking, triple-clicking or dragging it moves nothing. The old
     build scaled the header trigger (`hover:scale-105` / `active:scale-95`) and let
     the account wrapper size itself from its inline child; both are gone.
-15. **Profile editing**
+16. **Profile editing**
     `/account` → *Edit profile*: change the name, phone and delivery address, save,
     and confirm the values persist after a reload, show up in the personal-details
     card, and pre-fill `/checkout`. Do it on a phone width too: the card must not
@@ -751,17 +834,17 @@ reach an order that belongs to an account (only the owner or an admin can).
     (`break-words`), the two page columns carry `min-w-0`, and a 320 / 360 / 390 /
     414px sweep of `/`, `/products`, `/cart`, `/account`, `/orders` and `/checkout`
     reports `scrollWidth === clientWidth` everywhere.
-16. **Checkout needs an account**
+17. **Checkout needs an account**
     Signed out, open `/checkout` → the *Sign in to check out* card (never the form),
     and the URL becomes `/login?redirectTo=%2Fcheckout`; the login page says *Sign in
     to check out* and returns you to `/checkout` after signing in. The cart's button
     and the PDP *Buy now* read *Sign in to check out* as well. Then call
     `place_order` straight from the REST API with only the publishable key:
     `permission denied for function place_order`.
-17. **Footer contact details**
+18. **Footer contact details**
     Every page's *Get in touch* column reads **Hemayetpur, Savar, Dhaka** and
     **01934100750**.
-18. **User management (`/admin/users`)**
+19. **User management (`/admin/users`)**
     As an admin, **MANAGE → Users** lists every account with its name, e-mail,
     role, creation date and order count (name/e-mail/phone search, role chips and
     a *Blocked only* toggle above it). Change a shopper to **Operator**, reload,
@@ -775,14 +858,14 @@ reach an order that belongs to an account (only the owner or an admin can).
     *own* row has its role picker, **Block** and **Delete** disabled (the database
     refuses those regardless: `CANNOT_CHANGE_OWN_ROLE`), and so does the last
     remaining administrator (`LAST_ADMIN`).
-19. **Block and delete**
+20. **Block and delete**
     **Block** a customer: they can still browse, but their next sign-in to any
     protected page drops their session at `/login?error=account-disabled`, and
     checkout answers `ACCOUNT_DISABLED`. **Unblock** restores everything.
     Then **Delete** an account that has orders: the account disappears, the orders
     stay (as detached orders, so the revenue figures are unchanged), and the toast
     says so.
-20. **Order total = goods + delivery by area**
+21. **Order total = goods + delivery by area**
     At checkout, leave **Inside Dhaka** selected and place a COD order: the order
     card's *Summary* reads **Items**, **Delivery (Inside Dhaka) ৳ 60** and
     **Total**, where the total is the goods *plus* the fee. Switch the radio to
@@ -792,7 +875,7 @@ reach an order that belongs to an account (only the owner or an admin can).
     Then, as that customer, `PATCH /rest/v1/orders?id=eq.<your order>` with
     `{"shipping_fee": 0}` **or** `{"delivery_area": "outside"}`: the guard answers
     `ORDER_UPDATE_FORBIDDEN`, exactly as it does for `total_amount`.
-21. **Share previews, robots and the sitemap**
+22. **Share previews, robots and the sitemap**
     `curl -s localhost:3000/robots.txt` blocks `/admin` and `/api/` and points at
     the sitemap. `curl -s localhost:3000/sitemap.xml` lists the home page,
     `/products`, every active product and the two policy pages — and nothing
@@ -802,7 +885,7 @@ reach an order that belongs to an account (only the owner or an admin can).
     `<meta name="robots" content="noindex, nofollow">`. Once
     `NEXT_PUBLIC_SITE_URL` is the real domain, paste a product link into WhatsApp:
     the card renders with the photo, the title and the description.
-22. **Privacy Policy and Terms of Service**
+23. **Privacy Policy and Terms of Service**
     Open `/privacy` and `/terms` in a private window — no account, no redirect to
     `/login`. Both are linked from the footer of every public page and from the
     consent line on `/login` and `/register`. Jump to `/privacy#data-deletion`:
@@ -813,7 +896,7 @@ reach an order that belongs to an account (only the owner or an admin can).
     app review, the *Privacy Policy URL* is
     `https://nexus-commerce-shawon.vercel.app/privacy` and the *Data Deletion
     Instructions URL* is `https://nexus-commerce-shawon.vercel.app/privacy#data-deletion`.
-23. **Order confirmation e-mail**
+24. **Order confirmation e-mail**
     With `RESEND_API_KEY` and `ORDER_FROM_EMAIL` set, place a COD order: the
     confirmation screen appears immediately and the e-mail lands with the same
     *Items / Delivery / Total* breakdown as the order card, plus the tracking
@@ -898,7 +981,7 @@ Supabase realtime origin and the image hosts allow-listed first, so a wrong
 policy would break the shop rather than protect it.
 
 The `next/image` allow-list is **closed on purpose**: the seeded catalogue
-(Unsplash), Google and Facebook avatars, Supabase Storage and `localhost`, instead
+(Unsplash), Google avatars, Supabase Storage and `localhost`, instead
 of `hostname: '**'`. The optimizer fetches whatever URL it is handed, which is
 what every `/_next/image` advisory needs in order to be remotely exploitable
 (SSRF, DoS, unbounded cache growth, and an unauthenticated RCE in the AVIF path).
@@ -956,9 +1039,10 @@ from `NEXT_PUBLIC_SITE_URL` / `window.location.origin` in `lib/auth-url.ts`, so
 the value in Vercel and the value here have to agree.
 
 The same callback must be accepted by each OAuth provider: in the Google Cloud
-console (or Meta *Facebook Login → Settings*) add
-`https://<your-supabase-ref>.supabase.co/auth/v1/callback` as an authorised
-redirect URI, then switch the provider on in **Authentication → Providers**.
+console add `https://<your-supabase-ref>.supabase.co/auth/v1/callback` as an
+authorised redirect URI, then switch the provider on in
+**Authentication → Providers**. Google is the only OAuth provider this app offers
+— Facebook sign-in was removed, so there is no Meta callback left to register.
 
 `NEXT_PUBLIC_SITE_URL` is inlined at **build** time, so set it to the final domain
 *before* the first production build — or rerun `vercel --prod` after changing it.
@@ -978,10 +1062,11 @@ pointing at `localhost:3000`.
 | Image upload fails | Re-run section 9 — it creates the public `product-images` bucket and its policies. |
 | Avatar upload fails / “new row violates row-level security policy” | Run `0006_profile_avatars.sql` — it creates the public `avatars` bucket with owner-only write policies. Uploads must land in `avatars/<your-user-id>/…`. |
 | The header shows initials even though the shopper signed in with Google | The trigger ran before `0006` was applied. Run `0006_profile_avatars.sql`: it backfills `avatar_url` from `auth.users` for every profile that has none. |
-| *Continue with Google/Facebook* returns to `/login?error=…` | The provider is not enabled (or the redirect URI is missing). Configure it in Supabase → **Authentication → Providers**, and add `https://<ref>.supabase.co/auth/v1/callback` to the provider's allowed redirect list. |
+| *Continue with Google* returns to `/login?error=…` | The provider is not enabled (or the redirect URI is missing). Configure it in Supabase → **Authentication → Providers**, and add `https://<ref>.supabase.co/auth/v1/callback` to the provider's allowed redirect list. |
 | *Continue with Google* signs in silently, skipping the account chooser | That was the default: Google reuses whatever session the browser holds. The app now sends `prompt=select_account`; if it is ignored, the deployed build predates the fix — redeploy. `node scripts/qa/auth-probe.mjs` proves the parameter reaches `accounts.google.com`. |
-| Signed in inside Facebook / Messenger / Instagram but *still* signed out afterwards, or *"This browser dropped the part of the sign-in…"* | In-app browsers commonly refuse the cookie that holds the PKCE code verifier, and often fire the callback twice. The callback is now replay-safe (`Cache-Control: no-store`, and a second hit with an already-spent code forwards the session instead of failing) and `/auth/callback` is excluded from the session-refresh middleware so only one writer touches the auth cookies. The remaining case is a genuinely blocked cookie — the message says so and asks the shopper to reopen in Chrome or Safari via the ⋯ menu. |
-| Facebook login fails with *Invalid Scopes* | The app previously asked for `email,public_profile`, which GoTrue turned into the duplicated set `email email public_profile`. It now requests only `public_profile`, which GoTrue completes to `email public_profile`. |
+| Signed in inside Messenger / Instagram but *still* signed out afterwards, or *"This browser dropped the part of the sign-in…"* | In-app browsers commonly refuse the cookie that holds the PKCE code verifier, and often fire the callback twice. The callback is now replay-safe (`Cache-Control: no-store`, and a second hit with an already-spent code forwards the session instead of failing) and `/auth/callback` is excluded from the session-refresh middleware so only one writer touches the auth cookies. The remaining case is a genuinely blocked cookie — the message says so and asks the shopper to reopen in Chrome or Safari via the ⋯ menu. |
+| Mobile sign-in says *"that does not look like a Bangladeshi mobile number"* | The number must match `01[3-9]\d{8}` once normalised. `012…` (not a mobile operator) and any 10- or 12-digit number are refused on purpose. `lib/phone.ts` already accepts `+880…`, `880…`, `00880…`, a bare `1…` and spaces/dashes/brackets, and produces one alias per number — `node scripts/qa/phone-probe.mjs` proves it over eight spellings. |
+| A mobile-number account cannot use *Forgot password* | By design, not a bug: the `…@phone.nexuscommerce.dev` alias has no mailbox, so there is no address to mail a link to. `/forgot-password` recognises a number and answers with a support panel rather than firing a request that would bounce. Recovery is a manual step — confirm who you are talking to over the chat, then set a new password from Supabase → **Authentication → Users**. |
 | The password-reset e-mail never arrives | It is sent by **Supabase Auth**, not the Resend order mail — check spam, then the SMTP/sender under Supabase → **Authentication → Emails**. An address with no account gets no mail on purpose, and the screen stays deliberately vague either way. |
 | The reset link reports expired, or `/reset-password` shows the dead-link screen | Recovery links are single-use and last an hour. Also allow-list the site: Supabase → **Authentication → URL Configuration** must include both the **Site URL** and `…/auth/callback`, otherwise the callback cannot mint the recovery session. |
 | Choosing a new password fails with *Auth session missing* | `/reset-password` was opened directly instead of through the e-mailed link. Send the shopper to `/forgot-password` for a fresh one — the page says this itself. |
@@ -1069,9 +1154,9 @@ the money, the escaping and the route's guards.
 | Item | Why it is not done yet |
 | --- | --- |
 | **Upgrading Next.js** | `npm audit` flags the pinned `next@14.2.35` with two *critical* advisories plus a dozen others — notably an unauthenticated RCE in the Image Optimization API when AVIF files are used, and one that requires a **Windows**-hosted server (moot on Vercel, live on a Windows VM). The closed image allow-list above removes the practical vector, but the real fix is the upgrade. It is a **major** version jump (React 19, async `cookies()`/`params` in every route), so it deserves its own change with the whole QA suite re-run — not a hardening pass. |
-| Supabase **Redirect URLs** allow-list | The code builds every auth callback from `NEXT_PUBLIC_SITE_URL` (`lib/auth-url.ts`) and the live project already has Google, Facebook and email all enabled — a real hand-off to `accounts.google.com` was confirmed. What is left is a dashboard setting with no API surface here: **Authentication → URL Configuration** must list `https://nexus-commerce-shawon.vercel.app/auth/callback` (and, for the deeper targets such as `/checkout` and `/reset-password`, the glob `https://nexus-commerce-shawon.vercel.app/**`) under *Redirect URLs*, with the same origin as *Site URL*. Until then Supabase falls back to *Site URL* and the OAuth / reset links land in the wrong place. |
-| Meta app settings (Privacy Policy / data deletion) | The pages now exist and pass review-shaped checks, but the fields themselves are in the Meta developer console. Under **App Settings → Basic** set *Privacy Policy URL* to `https://nexus-commerce-shawon.vercel.app/privacy`, *Terms of Service URL* to `…/terms`, and *User data deletion* to *Data Deletion Instructions URL* `https://nexus-commerce-shawon.vercel.app/privacy#data-deletion`. Facebook Login → Settings must also list `https://rwxttlwnjgwkiavepmtu.supabase.co/auth/v1/callback` as a valid OAuth redirect URI. |
-| Facebook Client ID/Secret | The provider is switched on in Supabase, but if the credentials were never filled in the flow stops at Facebook. Google is live and verified end-to-end. |
+| Supabase **Redirect URLs** allow-list | The code builds every auth callback from `NEXT_PUBLIC_SITE_URL` (`lib/auth-url.ts`) and the live project already has Google and email enabled (Facebook is off, and a Facebook sign-in can no longer reach `facebook.com` — asserted by `scripts/qa/auth-probe.mjs`). What is left is a dashboard setting with no API surface here: **Authentication → URL Configuration** must list `https://nexus-commerce-shawon.vercel.app/auth/callback` (and, for the deeper targets such as `/checkout` and `/reset-password`, the glob `https://nexus-commerce-shawon.vercel.app/**`) under *Redirect URLs*, with the same origin as *Site URL*. Until then Supabase falls back to *Site URL* and the OAuth / reset links land in the wrong place. |
+| **Real** phone auth (SMS OTP) | Mobile-number sign-in currently maps a number onto an e-mail alias (§2.4F) — no SMS, no cost, but also no verification and no self-service recovery for a mobile-only account. `supabase.auth.signUp({ phone, password })` + `verifyOtp` is the real thing, and `lib/phone.ts` already produces the canonical value it wants. Blocked on the project's plan rather than on this codebase: the live project reports `external.phone = false`, `phone_autoconfirm = false`, `sms_provider = twilio`, and an SMS provider needs a paid tier. |
+| Running `0013_remove_facebook_identity.sql` | It is optional housekeeping — a disabled provider cannot authenticate anything — so it has not been run against the live project. Paste it into the SQL editor when convenient: it drops the leftover `facebook` rows from `auth.identities` and refuses to touch any account whose *only* identity is Facebook. |
 | A real support address in the footer | `support@nexuscommerce.dev` is a placeholder — point it at a mailbox somebody actually reads. |
 | `Content-Security-Policy` | It needs the Supabase realtime origin, the image hosts and Next's inline runtime allow-listed. The headers already in `next.config.mjs` are the safe subset; a wrong CSP would break the shop rather than protect it. |
 | A printable / PDF invoice | The order card and the confirmation e-mail are the invoice — items, delivery, total — but there is no print stylesheet or PDF export. `lib/email/order-confirmation.ts` already renders the whole document as HTML, so a print route can reuse it. |

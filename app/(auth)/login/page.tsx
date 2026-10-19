@@ -5,7 +5,8 @@ import { NO_INDEX } from '@/lib/seo';
 
 export const metadata: Metadata = {
   title: 'Sign in',
-  description: 'Sign in with Google, Facebook or your email to track your orders.',
+  description:
+    'Sign in with Google, your email address or your mobile number to track your orders.',
   robots: NO_INDEX,
 };
 
@@ -14,7 +15,7 @@ function friendlyAuthError(error: string) {
   if (error === 'auth-callback-failed')
     return 'That sign-in link has expired or was already used. Please try again.';
   if (error === 'auth-code-verifier-missing')
-    return 'This browser dropped the part of the sign-in that proves it was you — in-app browsers such as Facebook, Messenger or Instagram do this. Reopen the site in Chrome or Safari (or tap the ⋯ menu and choose “Open in browser”) and sign in again.';
+    return 'This browser dropped the part of the sign-in that proves it was you — the browsers built into messaging apps (Messenger, Instagram, TikTok) do this. Reopen the site in Chrome or Safari, or tap the ⋯ menu and choose “Open in browser”, then sign in again.';
   if (error === 'access_denied' || error === 'access_denied_denied')
     return 'You cancelled the sign-in, or the provider denied the request. Nothing was charged — try again whenever you are ready.';
   if (error === 'otp_expired')
@@ -37,11 +38,11 @@ export default function LoginPage({
 
   return (
     <>
-      <header className="mb-8">
+      <header className="mb-6">
         <h1 className="text-2xl font-bold tracking-tight">
           {toCheckout ? 'Sign in to check out' : 'Welcome back'}
         </h1>
-        <p className="mt-1.5 text-sm text-muted-foreground">
+        <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
           {toCheckout
             ? 'Your cart is saved and your details are ready — sign in and you will land straight back on checkout.'
             : 'Sign in to see your orders and check out faster.'}
@@ -49,8 +50,8 @@ export default function LoginPage({
       </header>
 
       {searchParams.error && (
-        <div className="mb-5 flex items-start gap-2.5 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+        <div className="mb-5 flex items-start gap-2.5 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
           <span>{friendlyAuthError(searchParams.error)}</span>
         </div>
       )}

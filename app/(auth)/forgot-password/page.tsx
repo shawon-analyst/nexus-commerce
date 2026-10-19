@@ -5,7 +5,7 @@ import { NO_INDEX } from '@/lib/seo';
 
 export const metadata: Metadata = {
   title: 'Reset your password',
-  description: 'Send yourself a secure, single-use link to choose a new password.',
+  description: 'Send yourself a secure, single-use verification link to choose a new password.',
   robots: NO_INDEX,
 };
 
@@ -26,16 +26,17 @@ export default function ForgotPasswordPage({
 }) {
   return (
     <>
-      <header className="mb-8">
+      <header className="mb-6">
         <h1 className="text-2xl font-bold tracking-tight">Forgot your password?</h1>
-        <p className="mt-1.5 text-sm text-muted-foreground">
-          Enter the email you signed up with and we will send a secure link to choose a new one.
+        <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+          Enter the email you signed up with and we will send a secure verification link to choose a
+          new one.
         </p>
       </header>
 
       {searchParams.error && (
-        <div className="mb-5 flex items-start gap-2.5 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+        <div className="mb-5 flex items-start gap-2.5 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
           <span>{friendlyAuthError(searchParams.error)}</span>
         </div>
       )}

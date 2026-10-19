@@ -176,11 +176,65 @@
       hsl(152 70% 50%) 100%
     );
   }
+
+  /* ---------------------------------------------------------------- *
+   *  Glassmorphism — the auth screens                                *
+   *  Frosted glass reads as glass rather than as "translucent grey"  *
+   *  only when three things are present: a real blur, a saturated     *
+   *  colour field *behind* it for that blur to pick up, and a hairline*
+   *  highlight on the top edge where light would catch. All three are *
+   *  here, and both themes get their own tint — a white veil over a   *
+   *  dark canvas looks like a bug, not a material.                    *
+   * ---------------------------------------------------------------- */
+  .glass-panel {
+    position: relative;
+    border-radius: 1.5rem;
+    border: 1px solid hsl(0 0% 100% / 0.6);
+    background-color: hsl(0 0% 100% / 0.7);
+    box-shadow:
+      inset 0 1px 0 0 hsl(0 0% 100% / 0.75),
+      0 24px 60px -24px hsl(222 47% 11% / 0.35);
+    backdrop-filter: blur(22px) saturate(180%);
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+  }
+
+  .dark .glass-panel {
+    border-color: hsl(0 0% 100% / 0.1);
+    background-color: hsl(224 40% 9% / 0.62);
+    box-shadow:
+      inset 0 1px 0 0 hsl(0 0% 100% / 0.07),
+      0 28px 70px -28px hsl(0 0% 0% / 0.8);
+  }
+
+  /* The canvas, and the drifting colour field the panel blurs. */
+  .auth-canvas {
+    background-color: hsl(210 40% 97%);
+  }
+  .dark .auth-canvas {
+    background-color: hsl(224 47% 5%);
+  }
+
+  .auth-aurora {
+    background-image:
+      radial-gradient(58% 52% at 14% 18%, hsl(243 75% 64% / 0.42) 0%, transparent 62%),
+      radial-gradient(52% 48% at 86% 12%, hsl(199 89% 58% / 0.34) 0%, transparent 62%),
+      radial-gradient(58% 58% at 50% 102%, hsl(160 70% 50% / 0.3) 0%, transparent 64%);
+    background-size: 175% 175%;
+    animation: aurora 26s ease-in-out infinite;
+  }
+
+  .dark .auth-aurora {
+    background-image:
+      radial-gradient(58% 52% at 14% 18%, hsl(243 80% 56% / 0.34) 0%, transparent 62%),
+      radial-gradient(52% 48% at 86% 12%, hsl(199 90% 50% / 0.24) 0%, transparent 62%),
+      radial-gradient(58% 58% at 50% 102%, hsl(160 70% 44% / 0.2) 0%, transparent 64%);
+  }
 }
 
 /* Anyone who asked the OS for less motion gets the message list, statically. */
 @media (prefers-reduced-motion: reduce) {
-  .announcement-surface {
+  .announcement-surface,
+  .auth-aurora {
     animation: none;
   }
 }

@@ -1,16 +1,20 @@
 /*
- * Verifies the social sign-in surface — both the parameters the app sends to
- * GoTrue and the behaviour of `/auth/callback` on a running server.
+ * Verifies the sign-in surface — the parameters the app sends to GoTrue and the
+ * behaviour of `/auth/callback` on a running server.
  *
  *   node scripts/qa/auth-probe.mjs
  *
  * The provider half needs only `.env.local` and never mutates anything: it calls
  * `/auth/v1/authorize` with `redirect: 'manual'` and reads the `Location` header
- * to see what GoTrue hands the provider. It starts no OAuth flow, so no account
- * is ever created and no e-mail is ever sent.
+ * to see what GoTrue hands the provider, and it reads the public `/settings`
+ * endpoint to confirm which providers the project actually offers. It starts no
+ * OAuth flow, so no account is ever created and no e-mail is ever sent.
  *
  * The callback half needs a server on `:3100` (override with PROBE_BASE). If no
  * server answers, those checks are reported as skipped rather than failed.
+ *
+ * The pure rules behind mobile-number sign-in live in `scripts/qa/phone-probe.mjs`;
+ * this file stays on the HTTP surface.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -56,8 +60,8 @@ async function authorize(params) {
 
 /*
  * The exact value `authCallbackUrl('/')` produces — no query string — which is
- * what the Google/Facebook button sends when the shopper is heading for the
- * storefront. `lib/auth-url.ts` only appends `?redirectTo=` for deeper targets.
+ * what the Google button sends when the shopper is heading for the storefront.
+ * `lib/auth-url.ts` only appends `?redirectTo=` for deeper targets.
  * The real assertion on that shape lives in the browser probe, which reads the
  * outbound request; here the value only needs to be faithful.
  */
@@ -67,7 +71,7 @@ console.log(`\n=== provider parameters (${new URL(SUPABASE_URL).host}) ===`);
 
 /* ---------------------------------------------------------------- Google --- */
 {
-  // Exactly what `SocialAuthButtons` sends: queryParams: { prompt: 'select_account' }.
+  // Exactly what `GoogleSignInButton` sends: queryParams: { prompt: 'select_account' }.
   const withPrompt = await authorize({
     provider: 'google',
     redirect_to: callbackUrl,
@@ -95,56 +99,45 @@ console.log(`\n=== provider parameters (${new URL(SUPABASE_URL).host}) ===`);
   );
 }
 
-/* -------------------------------------------------------------- Facebook --- */
+/* --------------------------------------------------- the project's providers --- */
+/*
+ * Facebook sign-in has been removed from this app, and a deleted button is only
+ * half of the story: a provider that is still switched on in the project leaves
+ * the endpoint reachable. `/auth/v1/settings` is public and anon-readable, so
+ * this is cheap, read-only proof that the removal is complete on both sides.
+ */
 {
-  // Exactly what `SocialAuthButtons` sends: scopes: 'public_profile'.
-  const withScopes = await authorize({
-    provider: 'facebook',
-    redirect_to: callbackUrl,
-    scopes: 'public_profile',
-  });
-  const scope = withScopes?.searchParams.get('scope') ?? '';
-  const tokens = scope.split(/[\s,]+/).filter(Boolean);
+  const settings = await (
+    await fetch(`${SUPABASE_URL}/auth/v1/settings`, { headers: { apikey: ANON_KEY } })
+  ).json();
 
   check(
-    'Facebook · requests e-mail and profile',
-    tokens.includes('email') && tokens.includes('public_profile'),
-    scope || 'n/a',
+    'Facebook sign-in is switched off in the project',
+    settings?.external?.facebook === false,
+    `external.facebook = ${settings?.external?.facebook}`,
   );
   check(
-    'Facebook · sends no duplicated permission token',
-    new Set(tokens).size === tokens.length,
-    `${tokens.length} token(s): ${scope || 'n/a'}`,
+    'Google sign-in is switched on',
+    settings?.external?.google === true,
+    `external.google = ${settings?.external?.google}`,
+  );
+  check(
+    'email + password sign-in is switched on',
+    settings?.external?.email === true,
+    `external.email = ${settings?.external?.email}`,
   );
 
   /*
-   * The shape that used to ship: `scopes: 'email,public_profile'`. GoTrue
-   * prepends its own default of `email` and normalises the delimiter itself, so
-   * the request carried the permission twice — the regression this probe exists
-   * to catch. It is the redundant token that was wrong, not the comma: the
-   * comma form and the space form produce byte-identical output.
+   * Whatever GoTrue answers for a disabled provider (today: no `Location` at
+   * all), the one thing that must never happen again is a hand-off to
+   * facebook.com. Asserting the destination rather than the status code keeps
+   * this honest without pinning GoTrue's exact refusal shape.
    */
-  const commaForm = await authorize({
-    provider: 'facebook',
-    redirect_to: callbackUrl,
-    scopes: 'email,public_profile',
-  });
-  const commaScope = commaForm?.searchParams.get('scope') ?? '';
+  const facebook = await authorize({ provider: 'facebook', redirect_to: callbackUrl });
   check(
-    'Facebook · the old comma-separated value really did duplicate the scope',
-    /email\s+email/.test(commaScope),
-    commaScope || 'n/a',
-  );
-
-  const spaceForm = await authorize({
-    provider: 'facebook',
-    redirect_to: callbackUrl,
-    scopes: 'email public_profile',
-  });
-  check(
-    'Facebook · GoTrue normalises the delimiter, so only the duplicate mattered',
-    (spaceForm?.searchParams.get('scope') ?? '') === commaScope,
-    `${spaceForm?.searchParams.get('scope')} === ${commaScope}`,
+    'a Facebook sign-in can no longer reach facebook.com',
+    facebook?.host !== 'www.facebook.com' && facebook?.host !== 'facebook.com',
+    facebook ? `Location → ${facebook.host}` : 'no Location header (GoTrue refuses)',
   );
 }
 

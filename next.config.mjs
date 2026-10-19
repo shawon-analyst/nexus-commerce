@@ -21,7 +21,6 @@ const nextConfig = {
     remotePatterns: [
       { protocol: 'https', hostname: 'images.unsplash.com' }, // seeded catalogue
       { protocol: 'https', hostname: 'lh3.googleusercontent.com' }, // Google avatars
-      { protocol: 'https', hostname: '*.fbcdn.net' }, // Facebook avatars
       { protocol: 'https', hostname: '*.supabase.co' }, // Storage: uploads, products
       { protocol: 'http', hostname: 'localhost' }, // local development
     ],

@@ -16,7 +16,8 @@ attempt.
 | `seo-probe.mjs` | `og:*` / `twitter:*` share cards, canonical URLs, title template, `robots.txt`, `sitemap.xml`, `noindex` on private pages, the two policy pages (fetched with Meta's own crawler user-agent) and the security headers | a server running on `:3100` |
 | `email-probe.mjs` | the order-confirmation template's numbers and escaping, and the notify route's auth guards | a server on `:3000` **plus** a throwaway preview route (see the file header) |
 | `image-probe.mjs` | allow-listed image hosts still optimise and an attacker-chosen host is refused — the boundary that keeps the `/_next/image` advisories off the table | a server (default `:3100`) + `.env.local` |
-| `auth-probe.mjs` | the OAuth parameters the app sends reach the provider intact (`prompt=select_account` for Google, a non-duplicated scope set for Facebook), and `/auth/callback` fails soft, is uncacheable and refuses open redirects | `.env.local`; the callback half additionally wants a server on `:3100` |
+| `auth-probe.mjs` | the OAuth parameters the app sends reach the provider intact (`prompt=select_account` for Google), that Facebook is switched off in the project *and* can no longer reach facebook.com, and that `/auth/callback` fails soft, is uncacheable and refuses open redirects | `.env.local`; the callback half additionally wants a server on `:3100` |
+| `phone-probe.mjs` | the mobile-number rules behind sign-in: every spelling of one number collapses to one alias address, 013-019 are accepted and 012 is not, the reserved alias domain is refused on the email tab, and the shared password policy | nothing (compiles `lib/phone.ts` + `lib/password.ts` with the project's own `tsc`) |
 
 ## RLS
 
@@ -71,25 +72,33 @@ Reads real image URLs out of the database, optimises them through
 `/_next/image`, and then asserts that three attacker-chosen hosts are refused —
 including the `images.unsplash.com.evil.example.com` suffix trick.
 
-## Social sign-in
+## Sign-in
 
 ```bash
 node scripts/qa/auth-probe.mjs         # add PROBE_BASE=… to also test the callback
+node scripts/qa/phone-probe.mjs        # the identifier rules, no server needed
 ```
 
-Two halves. The provider half calls `/auth/v1/authorize` with `redirect: 'manual'`
-and reads the `Location` header, so it sees exactly what GoTrue hands Google or
-Facebook without starting a flow — no account is created and no e-mail is sent.
-It pins the two parameters that are easy to get wrong: Google needs
-`prompt=select_account` or it silently reuses the browser's existing session, and
-Facebook must *not* be asked for `email` because GoTrue already prepends it (the
-old `'email,public_profile'` value went out as the duplicated
-`scope=email email public_profile`).
+`auth-probe.mjs` has two halves. The provider half calls `/auth/v1/authorize` with
+`redirect: 'manual'` and reads the `Location` header, so it sees exactly what
+GoTrue hands Google without starting a flow — no account is created and no e-mail
+is sent. It pins the parameter that is easy to get wrong: Google needs
+`prompt=select_account` or it silently reuses the browser's existing session. It
+also reads the public `/auth/v1/settings` and asserts that the Facebook provider
+is **off**, and that a Facebook sign-in can no longer reach `facebook.com` — the
+half of the removal that a deleted button does not cover.
 
 The callback half needs a server. It checks that a spent code, a bare call and a
 provider denial all redirect to `/login` (or `/forgot-password` for recovery)
 rather than 500-ing, that the response is `no-store`, and that `redirectTo` /
 `next` pointing at another origin are ignored.
+
+`phone-probe.mjs` covers mobile-number sign-in, which rests on one property: every
+spelling of a number (`01712 345678`, `+8801712345678`, `1712345678`,
+`008801712345678`, …) must collapse to a single alias address, or one shopper ends
+up with two accounts. It compiles `lib/phone.ts` and `lib/password.ts` with the
+project's own `tsc` into a temp directory and requires the result, so the pure
+rules get a real table of cases with no browser and no server.
 
 ## Related, kept outside the repo
 

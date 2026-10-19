@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/server';
 /**
  * OAuth / e-mail confirmation landing.
  *
- * Google and Facebook both come back here with an auth `code` (PKCE) which we
+ * Google sign-in comes back here with an auth `code` (PKCE) which we
  * exchange for a real session cookie before forwarding the shopper on. Provider
  * denials and expired codes arrive as `error` / `error_code` query params
  * instead, so those are surfaced on `/login` rather than swallowed.
@@ -14,9 +14,9 @@ import { createClient } from '@/lib/supabase/server';
  * template they arrive either as a PKCE `code` (handled above) or as a
  * `token_hash` + `type=recovery` pair, which is verified with `verifyOtp`.
  *
- * Three details exist purely for in-app browsers (Facebook, Facebook Lite,
- * Instagram, Messenger) and for WebViews generally, which are allowed to replay
- * a request, drop a cookie they dislike, or refuse a popup outright:
+ * Three details exist purely for in-app browsers (the WebViews inside Messenger,
+ * Instagram and other social apps) and for WebViews generally, which are allowed
+ * to replay a request, drop a cookie they dislike, or refuse a popup outright:
  *
  *  1. Every response is `no-store`, so a WebView's back/forward cache cannot
  *     replay a `code` that has already been spent.

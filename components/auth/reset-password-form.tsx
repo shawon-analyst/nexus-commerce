@@ -8,31 +8,11 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { MIN_PASSWORD_LENGTH, PASSWORD_STRENGTH_META, passwordStrength } from '@/lib/password';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import { cn, humanizeError } from '@/lib/utils';
 
 type Phase = 'checking' | 'form' | 'expired';
-
-const MIN_LENGTH = 8;
-
-/** Cheap, honest strength signal: length + variety, no third-party meter. */
-function strengthOf(password: string): number {
-  let score = 0;
-  if (password.length >= MIN_LENGTH) score += 1;
-  if (password.length >= 12) score += 1;
-  if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score += 1;
-  if (/\d/.test(password)) score += 1;
-  if (/[^A-Za-z0-9]/.test(password)) score += 1;
-  return Math.min(score, 4);
-}
-
-const STRENGTH_META = [
-  { label: '', bar: 'bg-transparent', width: 'w-0' },
-  { label: 'Weak', bar: 'bg-destructive', width: 'w-1/4' },
-  { label: 'Fair', bar: 'bg-amber-500', width: 'w-2/4' },
-  { label: 'Good', bar: 'bg-emerald-500', width: 'w-3/4' },
-  { label: 'Strong', bar: 'bg-emerald-500', width: 'w-full' },
-];
 
 /**
  * Sets a new password for the account behind a recovery link.
@@ -49,10 +29,11 @@ const STRENGTH_META = [
  */
 export function ResetPasswordForm({
   initialSession,
-  email,
+  identifier,
 }: {
   initialSession: boolean;
-  email: string | null;
+  /** The email address, or the formatted mobile number, behind this link. */
+  identifier: string | null;
 }) {
   const router = useRouter();
   const [phase, setPhase] = React.useState<Phase>(initialSession ? 'form' : 'checking');
@@ -83,17 +64,17 @@ export function ResetPasswordForm({
     };
   }, [initialSession]);
 
-  const score = strengthOf(password);
-  const meta = STRENGTH_META[score];
+  const score = passwordStrength(password);
+  const meta = PASSWORD_STRENGTH_META[score];
   const matches = password.length > 0 && password === confirm;
-  const canSubmit = password.length >= MIN_LENGTH && matches && !loading;
+  const canSubmit = password.length >= MIN_PASSWORD_LENGTH && matches && !loading;
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
 
-    if (password.length < MIN_LENGTH) {
+    if (password.length < MIN_PASSWORD_LENGTH) {
       toast.error('Password too short', {
-        description: `Use at least ${MIN_LENGTH} characters.`,
+        description: `Use at least ${MIN_PASSWORD_LENGTH} characters.`,
       });
       return;
     }
@@ -158,9 +139,9 @@ export function ResetPasswordForm({
 
   return (
     <form onSubmit={onSubmit} className="space-y-4">
-      {email && (
+      {identifier && (
         <p className="rounded-lg border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-          Setting a new password for <strong className="text-foreground">{email}</strong>
+          Setting a new password for <strong className="text-foreground">{identifier}</strong>
         </p>
       )}
 
@@ -172,9 +153,9 @@ export function ResetPasswordForm({
             type={showPassword ? 'text' : 'password'}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            placeholder={`At least ${MIN_LENGTH} characters`}
+            placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
             autoComplete="new-password"
-            minLength={MIN_LENGTH}
+            minLength={MIN_PASSWORD_LENGTH}
             className="pr-10"
             required
             autoFocus
@@ -212,7 +193,7 @@ export function ResetPasswordForm({
           onChange={(event) => setConfirm(event.target.value)}
           placeholder="Retype it"
           autoComplete="new-password"
-          minLength={MIN_LENGTH}
+          minLength={MIN_PASSWORD_LENGTH}
           required
         />
         {confirm.length > 0 && !matches && (

@@ -55,7 +55,7 @@ export function CheckoutGate({ reason = 'anonymous' }: { reason?: 'anonymous' | 
       </div>
 
       <p className="mt-3 text-xs text-muted-foreground">
-        Google and Facebook sign-in work too — no password to remember.
+        You can also continue with Google, or create an account with just a mobile number.
       </p>
 
       {isError && (

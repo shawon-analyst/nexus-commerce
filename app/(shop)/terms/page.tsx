@@ -73,8 +73,14 @@ export default function TermsOfServicePage() {
             tell us immediately if you think someone else has access to it.
           </li>
           <li>
-            You may sign in with Google or Facebook instead of a password. Their own terms apply to
-            that account.
+            You can create an account with an email address or with a mobile number, and sign in
+            with either of them plus your password — or continue with Google, in which case
+            Google&rsquo;s own terms apply to that account.
+          </li>
+          <li>
+            A mobile-number account is identified by that number but is{' '}
+            <strong className="text-foreground">not</strong> SMS-verified, so please check it
+            carefully when you register. Your password is what protects the account.
           </li>
           <li>
             Staff and operator accounts (used to run the store) cannot place orders. If you are signed
